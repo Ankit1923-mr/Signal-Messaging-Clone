@@ -98,7 +98,7 @@ export function MessageInput({ conversationId, disabled }: MessageInputProps) {
   const isNearLimit = charPercentage > 80;
 
   return (
-    <div className="border-t border-gray-200 bg-white p-4 space-y-2">
+    <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4 space-y-2">
       {/* Error message */}
       {error && (
         <div className="text-xs text-red-600 bg-red-50 p-2 rounded">

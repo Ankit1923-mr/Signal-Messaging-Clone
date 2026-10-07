@@ -8,6 +8,8 @@ import { Avatar, GroupAvatar } from "@/components/Avatar";
 interface ConversationListProps {
   activeConversationId?: number;
   onSelectConversation: (conversationId: number) => void;
+  /** Client-side filter by conversation/other-member display name. */
+  searchQuery?: string;
 }
 
 /**
@@ -24,6 +26,7 @@ interface ConversationListProps {
 export function ConversationList({
   activeConversationId,
   onSelectConversation,
+  searchQuery,
 }: ConversationListProps) {
   const conversations = useMessageStore((state) => state.conversations);
   const unreadCounts = useMessageStore((state) => state.unreadCounts);
@@ -31,8 +34,22 @@ export function ConversationList({
   const isUserOnline = useMessageStore((state) => state.isUserOnline);
   const currentUser = useAuthStore((state) => state.user);
 
+  // Filter by search query (matches conversation name or the other member's name)
+  const query = searchQuery?.trim().toLowerCase();
+  const filteredConversations = !query
+    ? conversations
+    : conversations.filter((conversation) => {
+        const otherMember =
+          conversation.type === "direct"
+            ? conversation.members.find((m) => m.id !== currentUser?.id)
+            : undefined;
+        const name = (conversation.name || otherMember?.display_name || "").toLowerCase();
+        const username = (otherMember?.username || "").toLowerCase();
+        return name.includes(query) || username.includes(query);
+      });
+
   // Sort conversations by latest activity
-  const sortedConversations = [...conversations].sort((a, b) => {
+  const sortedConversations = [...filteredConversations].sort((a, b) => {
     const aMessages = messages[a.id] || [];
     const bMessages = messages[b.id] || [];
 
@@ -59,6 +76,14 @@ export function ConversationList({
         </div>
         <p className="text-sm font-medium text-gray-600">No conversations yet</p>
         <p className="text-xs text-gray-400 mt-1">Start a new conversation to begin messaging</p>
+      </div>
+    );
+  }
+
+  if (filteredConversations.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-gray-400 px-6 py-12 text-center">
+        No conversations match &quot;{searchQuery}&quot;
       </div>
     );
   }

@@ -8,10 +8,12 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { ConversationList } from "@/components/ConversationList";
 import { ChatHeader } from "@/components/ChatHeader";
 import { Avatar } from "@/components/Avatar";
-import { NewConversationModal } from "@/components/NewConversationModal";
+import { NewMessagePanel } from "@/components/NewMessagePanel";
 import { MessageList } from "@/components/messages/MessageList";
 import { MessageInput } from "@/components/messages/MessageInput";
 import { TypingIndicator } from "@/components/messages/TypingIndicator";
+
+type SidebarView = "conversations" | "new-message";
 
 export default function ConversationsPage() {
   // TEMPORARY DEBUG: remove once the freeze/no-response bugfix is confirmed.
@@ -20,7 +22,8 @@ export default function ConversationsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, loadUser, logout } = useAuthStore();
   const { activeConversationId, conversations, selectConversation } = useConversations();
-  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [sidebarView, setSidebarView] = useState<SidebarView>("conversations");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // WebSocket connects as soon as the user is authenticated (cookie-based auth).
   const { isConnected, reconnecting } = useWebSocket();
@@ -61,60 +64,74 @@ export default function ConversationsPage() {
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar: current user + conversation list */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        {/* Current user profile header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
-          <Avatar avatarUrl={user.avatar_url} seed={user.username} size={40} />
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm text-gray-900 truncate">{user.display_name}</p>
-            <p className="text-xs text-gray-400 flex items-center gap-1">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isConnected ? "bg-green-500" : "bg-gray-300"
-                }`}
+    <div className="flex h-screen overflow-hidden bg-gray-100">
+      {/* Sidebar: fixed width, never overlaps the chat pane */}
+      <div className="w-[340px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden">
+        {sidebarView === "new-message" ? (
+          <NewMessagePanel
+            onBack={() => setSidebarView("conversations")}
+            onConversationCreated={(conversationId) => selectConversation(conversationId)}
+          />
+        ) : (
+          <>
+            {/* Current user profile header */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 flex-shrink-0">
+              <Avatar avatarUrl={user.avatar_url} seed={user.username} size={40} />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-gray-900 truncate">{user.display_name}</p>
+                <p className="text-xs text-gray-400 flex items-center gap-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isConnected ? "bg-green-500" : "bg-gray-300"
+                    }`}
+                  />
+                  {isConnected ? "Connected" : reconnecting ? "Reconnecting..." : "Offline"}
+                </p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+              >
+                Logout
+              </button>
+            </div>
+
+            {/* Conversation search */}
+            <div className="px-3 py-2 border-b border-gray-200 flex-shrink-0">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search conversations..."
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              {isConnected ? "Connected" : reconnecting ? "Reconnecting..." : "Offline"}
-            </p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
-          >
-            Logout
-          </button>
-        </div>
+            </div>
 
-        {/* Conversation list */}
-        <ConversationList
-          activeConversationId={activeConversationId ?? undefined}
-          onSelectConversation={selectConversation}
-        />
+            {/* Conversation list (its own internal overflow-y-auto) */}
+            <ConversationList
+              activeConversationId={activeConversationId ?? undefined}
+              onSelectConversation={selectConversation}
+              searchQuery={searchQuery}
+            />
 
-        {/* New conversation action */}
-        <div className="p-3 border-t border-gray-200">
-          <button
-            onClick={() => {
-              console.log("NEW CONVERSATION CLICKED"); // TEMPORARY DEBUG
-              setShowNewConversation(true);
-            }}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
-          >
-            + New Conversation
-          </button>
-        </div>
+            {/* New message action */}
+            <div className="p-3 border-t border-gray-200 flex-shrink-0">
+              <button
+                onClick={() => {
+                  console.log("NEW CONVERSATION CLICKED"); // TEMPORARY DEBUG
+                  setSidebarView("new-message");
+                }}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
+              >
+                + New message
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
-      {showNewConversation && (
-        <NewConversationModal
-          onClose={() => setShowNewConversation(false)}
-          onConversationCreated={(conversationId) => selectConversation(conversationId)}
-        />
-      )}
-
-      {/* Main area: chat header + messages + composer */}
-      <div className="flex-1 flex flex-col bg-white">
+      {/* Main area: fills remaining space, never overlaps the sidebar */}
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-white">
         {activeConversation ? (
           <>
             <ChatHeader conversation={activeConversation} />
