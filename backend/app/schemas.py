@@ -120,6 +120,10 @@ class MessageHistoryResponse(BaseModel):
     content: str
     created_at: str  # ISO 8601
     status: str  # pending/delivered/read — see get_conversation_messages() for whose receipt this is
+    reply_to_message_id: int | None = None
+    reply_to_sender_id: int | None = None
+    reply_to_content: str | None = None  # short snippet, for the quoted preview
+    reply_to_deleted: bool = False  # true if reply_to_message_id was set but the original no longer resolves
 
 
 class VerifyOTPRequest(BaseModel):
@@ -152,6 +156,9 @@ class SendMessagePayload(BaseModel):
     conversation_id: int
     client_id: str = Field(..., min_length=1, description="UUID for idempotency")
     content: str = Field(..., min_length=1, max_length=4000, description="Message text (1-4000 chars)")
+    reply_to_message_id: int | None = Field(
+        None, description="Optional: id of the message this one replies to"
+    )
 
 
 class MessageAckPayload(BaseModel):
@@ -160,6 +167,10 @@ class MessageAckPayload(BaseModel):
     client_id: str
     created_at: str  # ISO 8601
     status: str = "pending"  # pending, delivered, read
+    reply_to_message_id: int | None = None
+    reply_to_sender_id: int | None = None
+    reply_to_content: str | None = None
+    reply_to_deleted: bool = False
 
 
 class MessageReceivedPayload(BaseModel):
@@ -170,6 +181,10 @@ class MessageReceivedPayload(BaseModel):
     content: str
     created_at: str  # ISO 8601
     status: str = "pending"
+    reply_to_message_id: int | None = None
+    reply_to_sender_id: int | None = None
+    reply_to_content: str | None = None
+    reply_to_deleted: bool = False
 
 
 class ReceiptPayload(BaseModel):
@@ -212,6 +227,10 @@ class PendingMessage(BaseModel):
     content: str
     created_at: str  # ISO 8601
     status: str = "pending"
+    reply_to_message_id: int | None = None
+    reply_to_sender_id: int | None = None
+    reply_to_content: str | None = None
+    reply_to_deleted: bool = False
 
 
 class ReconnectedPayload(BaseModel):

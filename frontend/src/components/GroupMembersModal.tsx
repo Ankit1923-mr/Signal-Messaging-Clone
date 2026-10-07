@@ -5,6 +5,7 @@ import { Conversation, User } from "@/types/protocol";
 import { conversationService } from "@/services/conversationService";
 import { useMessageStore } from "@/store/messageStore";
 import { Avatar } from "@/components/Avatar";
+import { toast } from "@/store/toastStore";
 
 interface GroupMembersModalProps {
   conversation: Conversation;
@@ -25,7 +26,6 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
   const isAdmin = conversation.admin_id === currentUserId;
 
   const [busyUserId, setBusyUserId] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const [showAddPicker, setShowAddPicker] = useState(false);
   const [query, setQuery] = useState("");
@@ -41,7 +41,7 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
       const users = await conversationService.searchUsers(q);
       setResults(users.filter((u) => !memberIds.has(u.id)));
     } catch {
-      setError("Failed to search contacts");
+      toast.error("Failed to search contacts");
     } finally {
       setSearching(false);
     }
@@ -60,14 +60,14 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
 
   const handleAddMember = async (userId: number) => {
     setBusyUserId(userId);
-    setError(null);
     try {
       const updated = await conversationService.addGroupMember(conversation.id, userId);
       addConversation(updated);
+      toast.success("Member added");
       setShowAddPicker(false);
       setQuery("");
     } catch (err) {
-      setError("Failed to add member");
+      toast.error("Failed to add member");
     } finally {
       setBusyUserId(null);
     }
@@ -75,12 +75,12 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
 
   const handleRemoveMember = async (userId: number) => {
     setBusyUserId(userId);
-    setError(null);
     try {
       const updated = await conversationService.removeGroupMember(conversation.id, userId);
       addConversation(updated);
+      toast.success("Member removed");
     } catch (err) {
-      setError("Failed to remove member");
+      toast.error("Failed to remove member");
     } finally {
       setBusyUserId(null);
     }
@@ -92,18 +92,18 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg shadow-xl w-[360px] max-h-[80vh] flex flex-col"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[360px] max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div>
-            <h2 className="font-semibold text-gray-900">{conversation.name || "Group"}</h2>
-            <p className="text-xs text-gray-500">{conversation.members.length} members</p>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100">{conversation.name || "Group"}</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{conversation.members.length} members</p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
             aria-label="Close"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">
@@ -112,10 +112,6 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
           </button>
         </div>
 
-        {error && (
-          <div className="px-4 py-2 text-xs text-red-600 bg-red-50 flex-shrink-0">{error}</div>
-        )}
-
         {/* Member list */}
         <div className="flex-1 overflow-y-auto">
           {conversation.members.map((member) => {
@@ -123,20 +119,20 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
             return (
               <div
                 key={member.id}
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 <Avatar avatarUrl={member.avatar_url} seed={member.username} size={36} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                     {member.display_name}
                     {member.id === currentUserId && (
                       <span className="text-gray-400 font-normal"> (you)</span>
                     )}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">@{member.username}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">@{member.username}</p>
                 </div>
                 {memberIsAdmin && (
-                  <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                  <span className="text-xs font-medium text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-full flex-shrink-0">
                     Admin
                   </span>
                 )}
@@ -144,7 +140,7 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
                   <button
                     onClick={() => handleRemoveMember(member.id)}
                     disabled={busyUserId !== null}
-                    className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50 flex-shrink-0"
+                    className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50 flex-shrink-0"
                   >
                     {busyUserId === member.id ? "Removing..." : "Remove"}
                   </button>
@@ -156,7 +152,7 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
 
         {/* Admin-only: add member */}
         {isAdmin && (
-          <div className="border-t border-gray-200 flex-shrink-0">
+          <div className="border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
             {showAddPicker ? (
               <div className="flex flex-col max-h-60">
                 <div className="p-2">
@@ -166,28 +162,28 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
                     value={query}
                     onChange={(e) => handleQueryChange(e.target.value)}
                     placeholder="Search contacts to add..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
                 <div className="flex-1 overflow-y-auto">
                   {searching ? (
-                    <p className="text-center text-sm text-gray-400 py-4">Searching...</p>
+                    <p className="text-center text-sm text-gray-400 dark:text-gray-500 py-4">Searching...</p>
                   ) : results.length === 0 ? (
-                    <p className="text-center text-sm text-gray-400 py-4">No contacts found</p>
+                    <p className="text-center text-sm text-gray-400 dark:text-gray-500 py-4">No contacts found</p>
                   ) : (
                     results.map((user) => (
                       <button
                         key={user.id}
                         onClick={() => handleAddMember(user.id)}
                         disabled={busyUserId !== null}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                       >
                         <Avatar avatarUrl={user.avatar_url} seed={user.username} size={32} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{user.display_name}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{user.display_name}</p>
                         </div>
                         {busyUserId === user.id && (
-                          <span className="text-xs text-gray-400 flex-shrink-0">Adding...</span>
+                          <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">Adding...</span>
                         )}
                       </button>
                     ))
@@ -197,7 +193,7 @@ export function GroupMembersModal({ conversation, currentUserId, onClose }: Grou
             ) : (
               <button
                 onClick={() => setShowAddPicker(true)}
-                className="w-full text-sm font-semibold text-blue-600 hover:bg-blue-50 py-3 transition-colors"
+                className="w-full text-sm font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 py-3 transition-colors"
               >
                 + Add Member
               </button>

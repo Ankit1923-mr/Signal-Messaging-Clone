@@ -1,20 +1,38 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { Message } from "@/types/protocol";
 
 interface MessageInputProps {
   conversationId: number;
   disabled?: boolean;
+  /** The message being replied to, if any (lifted to the page so ChatHeader/
+   * MessageItem's "Reply" action and this composer can share it). */
+  replyTarget?: Message | null;
+  /** Reply-target display name, for the "Replying to X" bar. */
+  replyTargetName?: string;
+  onCancelReply?: () => void;
 }
 
 const MAX_MESSAGE_LENGTH = 4000;
 
-export function MessageInput({ conversationId, disabled }: MessageInputProps) {
+export function MessageInput({
+  conversationId,
+  disabled,
+  replyTarget,
+  replyTargetName,
+  onCancelReply,
+}: MessageInputProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { sendMessage, isConnected, sendTyping } = useWebSocket();
+
+  // Focus the composer when a reply is started, like Signal does.
+  useEffect(() => {
+    if (replyTarget) textareaRef.current?.focus();
+  }, [replyTarget]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -57,9 +75,10 @@ export function MessageInput({ conversationId, disabled }: MessageInputProps) {
 
     try {
       setError(null);
-      await sendMessage(conversationId, trimmed);
+      await sendMessage(conversationId, trimmed, replyTarget?.id);
       setText("");
       sendTyping(conversationId, false);
+      onCancelReply?.();
 
       // Reset textarea height
       if (textareaRef.current) {
@@ -98,7 +117,28 @@ export function MessageInput({ conversationId, disabled }: MessageInputProps) {
   const isNearLimit = charPercentage > 80;
 
   return (
-    <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4 space-y-2">
+    <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-2">
+      {/* Replying-to bar */}
+      {replyTarget && (
+        <div className="flex items-start justify-between gap-2 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 border-l-2 border-blue-500">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+              Replying to {replyTargetName || "message"}
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-300 truncate">{replyTarget.content}</p>
+          </div>
+          <button
+            onClick={onCancelReply}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0 p-0.5"
+            aria-label="Cancel reply"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Error message */}
       {error && (
         <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
@@ -117,7 +157,7 @@ export function MessageInput({ conversationId, disabled }: MessageInputProps) {
           placeholder="Type a message... (Shift+Enter for newline)"
           disabled={isDisabled}
           rows={1}
-          className="flex-1 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
+          className="flex-1 p-3 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500"
           style={{
             maxHeight: "200px",
             overflowY: charCount > 100 ? "auto" : "hidden",
@@ -135,13 +175,13 @@ export function MessageInput({ conversationId, disabled }: MessageInputProps) {
       </div>
 
       {/* Character counter */}
-      <div className="flex justify-between items-center text-xs text-gray-500">
+      <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
         <div>
           {charCount} / {MAX_MESSAGE_LENGTH}
         </div>
 
         {/* Character limit progress bar */}
-        <div className="w-32 h-1 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-32 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
             className={`h-full transition-colors ${
               isNearLimit ? "bg-red-500" : "bg-blue-500"

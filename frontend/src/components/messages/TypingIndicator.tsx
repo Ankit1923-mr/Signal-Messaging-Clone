@@ -37,7 +37,7 @@ export function TypingIndicator({ conversationId, conversation }: TypingIndicato
   const name = typingMember?.display_name || typingMember?.username || "Someone";
 
   return (
-    <div className="flex-shrink-0 text-xs text-gray-500 italic px-4 py-2">
+    <div className="flex-shrink-0 text-xs text-gray-500 dark:text-gray-400 italic px-4 py-2">
       {name} is typing...
     </div>
   );

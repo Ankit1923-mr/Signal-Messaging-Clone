@@ -40,6 +40,10 @@ interface MessageHistoryApiResponse {
   content: string;
   created_at: string;
   status: string;
+  reply_to_message_id: number | null;
+  reply_to_sender_id: number | null;
+  reply_to_content: string | null;
+  reply_to_deleted: boolean;
 }
 
 function toConversation(data: ConversationApiResponse): Conversation {
@@ -62,6 +66,10 @@ function toMessage(data: MessageHistoryApiResponse): Message {
     client_id: data.client_id,
     created_at: data.created_at,
     status: data.status as ReceiptStatus,
+    reply_to_message_id: data.reply_to_message_id ?? undefined,
+    reply_to_sender_id: data.reply_to_sender_id ?? undefined,
+    reply_to_content: data.reply_to_content ?? undefined,
+    reply_to_deleted: data.reply_to_deleted,
   };
 }
 

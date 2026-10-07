@@ -44,7 +44,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
   }
 
   return (
-    <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white">
+    <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
       <button
         onClick={() => conversation.type === "group" && setShowMembers(true)}
         disabled={conversation.type !== "group"}
@@ -61,8 +61,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           />
         )}
         <div>
-          <h2 className="font-semibold text-sm text-gray-900">{displayName}</h2>
-          <p className="text-xs text-gray-500">{subtitle}</p>
+          <h2 className="font-semibold text-sm text-gray-900 dark:text-gray-100">{displayName}</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
         </div>
       </button>
 
@@ -76,12 +76,12 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
 
       {/* Placeholder controls — not wired to real features yet */}
       <div className="flex items-center gap-1 text-gray-400">
-        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors" title="Search" disabled>
+        <button className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Search" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.85-5.65a7.5 7.5 0 11-15 0 7.5 7.5 0 0115 0z" />
           </svg>
         </button>
-        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors" title="More" disabled>
+        <button className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="More" disabled>
           <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
             <path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4z" />
           </svg>

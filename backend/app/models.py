@@ -154,11 +154,17 @@ class Message(Base):
     client_id = Column(String(64), nullable=False)  # For idempotency
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Signal-style reply-to-message. Nullable (most messages aren't
+    # replies), self-referential, SET NULL on delete so a reply never
+    # blocks deleting the message it quoted -- it becomes an "original
+    # unavailable" reply instead. See migrations/versions/004_add_message_reply.py.
+    reply_to_message_id = Column(Integer, ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
     sender = relationship("User", back_populates="messages")
     receipts = relationship("MessageReceipt", back_populates="message", cascade="all, delete-orphan")
+    reply_to_message = relationship("Message", remote_side=[id])
 
     # Constraints
     __table_args__ = (
@@ -166,6 +172,7 @@ class Message(Base):
         Index("idx_messages_conversation", "conversation_id"),
         Index("idx_messages_sender", "sender_id"),
         Index("idx_messages_created", "created_at"),
+        Index("idx_messages_reply_to", "reply_to_message_id"),
     )
 
 

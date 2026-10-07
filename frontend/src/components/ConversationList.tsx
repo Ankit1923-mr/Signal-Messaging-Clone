@@ -68,21 +68,22 @@ export function ConversationList({
   if (conversations.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12">
-        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+        <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-8 h-8 text-gray-400">
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
         </div>
-        <p className="text-sm font-medium text-gray-600">No conversations yet</p>
-        <p className="text-xs text-gray-400 mt-1">Start a new conversation to begin messaging</p>
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No conversations yet</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Add a contact or create a group to start messaging</p>
       </div>
     );
   }
 
   if (filteredConversations.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-sm text-gray-400 px-6 py-12 text-center">
-        No conversations match &quot;{searchQuery}&quot;
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12">
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No conversations found</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Try another name or username</p>
       </div>
     );
   }
@@ -110,8 +111,8 @@ export function ConversationList({
           <button
             key={conversation.id}
             onClick={() => onSelectConversation(conversation.id)}
-            className={`w-full px-3 py-3 text-left transition-colors border-b border-gray-100 hover:bg-gray-50 ${
-              isActive ? "bg-blue-50" : ""
+            className={`w-full px-3 py-3 text-left transition-colors border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 ${
+              isActive ? "bg-blue-50 dark:bg-gray-800" : ""
             }`}
           >
             <div className="flex items-center gap-3">
@@ -128,17 +129,17 @@ export function ConversationList({
 
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-baseline gap-2">
-                  <h3 className="font-semibold text-sm text-gray-900 truncate">
+                  <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">
                     {displayName}
                   </h3>
                   {lastMessage && (
-                    <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                    <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap flex-shrink-0">
                       {formatRelativeTime(lastMessage.created_at)}
                     </span>
                   )}
                 </div>
                 <div className="flex justify-between items-center gap-2 mt-0.5">
-                  <p className="text-sm text-gray-500 truncate">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                     {lastMessage ? lastMessage.content.substring(0, 50) : "No messages yet"}
                   </p>
                   {unreadCount > 0 && (

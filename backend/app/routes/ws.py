@@ -25,7 +25,7 @@ from app.database import get_db, SessionLocal
 from app.security import verify_token
 from app.models import User, Conversation, ConversationMembers
 from app.services.connections import ConnectionManager
-from app.services.messaging import MessagingService
+from app.services.messaging import MessagingService, build_reply_preview
 from app.services.receipts import ReceiptService
 from app.time_utils import utc_isoformat
 from app.ws_protocol import MessageType
@@ -162,7 +162,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     "conversation_id": msg.conversation_id,
                     "content": msg.content,
                     "created_at": utc_isoformat(msg.created_at),
-                    "status": "pending"
+                    "status": "pending",
+                    **build_reply_preview(msg, db),
                 })
 
             await websocket.send_json({
@@ -308,6 +309,7 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
         conversation_id = payload.get("conversation_id")
         client_id = payload.get("client_id")
         content = payload.get("content")
+        reply_to_message_id = payload.get("reply_to_message_id")
 
         # Validate required fields
         if not all([conversation_id, client_id, content]):
@@ -319,8 +321,10 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
             conversation_id=conversation_id,
             client_id=client_id,
             content=content,
-            db=db
+            db=db,
+            reply_to_message_id=reply_to_message_id,
         )
+        reply_preview = build_reply_preview(message, db)
 
         # Get all conversation members for broadcasting
         members = db.query(ConversationMembers).filter(
@@ -337,7 +341,8 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
                 "message_id": message.id,
                 "client_id": client_id,
                 "created_at": utc_isoformat(message.created_at),
-                "status": "pending"
+                "status": "pending",
+                **reply_preview,
             }
         })
 
@@ -352,7 +357,8 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
                         "sender_id": user_id,
                         "content": message.content,
                         "created_at": utc_isoformat(message.created_at),
-                        "status": "pending"
+                        "status": "pending",
+                        **reply_preview,
                     }
                 })
 

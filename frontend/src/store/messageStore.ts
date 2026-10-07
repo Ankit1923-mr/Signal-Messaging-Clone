@@ -57,7 +57,15 @@ interface MessageStoreActions {
   // Message management
   addMessage: (message: Message) => void;
   addOptimisticMessage: (clientId: string, message: Message) => void;
-  confirmMessage: (clientId: string, messageId: number, createdAt?: string) => void;
+  confirmMessage: (
+    clientId: string,
+    messageId: number,
+    createdAt?: string,
+    replyPreview?: Pick<
+      Message,
+      "reply_to_message_id" | "reply_to_sender_id" | "reply_to_content" | "reply_to_deleted"
+    >
+  ) => void;
   getMessages: (conversationId: number) => Message[];
 
   // Receipt tracking
@@ -156,7 +164,15 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
     // view (MESSAGE_RECEIVED) and the post-refresh history fetch both
     // already used the server's created_at directly; this brings the
     // sender's own live view in line with the same single source of truth.
-    confirmMessage: (clientId: string, messageId: number, createdAt?: string) => {
+    confirmMessage: (
+      clientId: string,
+      messageId: number,
+      createdAt?: string,
+      replyPreview?: Pick<
+        Message,
+        "reply_to_message_id" | "reply_to_sender_id" | "reply_to_content" | "reply_to_deleted"
+      >
+    ) => {
       set((state) => {
         const message = state.pendingMessages[clientId];
         if (!message) return state;
@@ -165,11 +181,15 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
         const { [clientId]: _, ...remaining } = state.pendingMessages;
 
         // Update message with real ID and (if provided) the server's
-        // authoritative created_at.
+        // authoritative created_at, plus the server-confirmed reply
+        // preview (replaces the client-side guess computed at send time
+        // in useWebSocket.ts's sendMessage, e.g. if the reply target
+        // wasn't actually valid and the server dropped it).
         const updated = {
           ...message,
           id: messageId,
           ...(createdAt ? { created_at: createdAt } : {}),
+          ...(replyPreview ? replyPreview : {}),
         };
 
         // Update in messages array

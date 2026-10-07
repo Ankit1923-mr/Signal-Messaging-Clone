@@ -83,16 +83,27 @@ export interface SendMessagePayload {
   conversation_id: number;
   client_id: string; // UUID for idempotency
   content: string; // 1-4000 characters
+  reply_to_message_id?: number; // optional: id of the message this one replies to
 }
 
-export interface MessageAckPayload {
+/** Denormalized reply-preview fields, present on every message payload shape
+ * (ACK/RECEIVED/PendingMessage/history) so a reply renders correctly even
+ * when the original message isn't in this client's local store. */
+export interface ReplyPreviewFields {
+  reply_to_message_id?: number | null;
+  reply_to_sender_id?: number | null;
+  reply_to_content?: string | null;
+  reply_to_deleted?: boolean;
+}
+
+export interface MessageAckPayload extends ReplyPreviewFields {
   message_id: number;
   client_id: string;
   created_at: string; // ISO 8601
   status: ReceiptStatus;
 }
 
-export interface MessageReceivedPayload {
+export interface MessageReceivedPayload extends ReplyPreviewFields {
   message_id: number;
   conversation_id: number;
   sender_id: number;
@@ -139,7 +150,7 @@ export interface ConnectedPayload {
   timestamp: string; // ISO 8601
 }
 
-export interface PendingMessage {
+export interface PendingMessage extends ReplyPreviewFields {
   message_id: number;
   sender_id: number;
   conversation_id: number;
@@ -163,7 +174,7 @@ export interface WebSocketErrorPayload {
 // APPLICATION DOMAIN TYPES
 // ============================================================================
 
-export interface Message {
+export interface Message extends ReplyPreviewFields {
   id: number;
   conversation_id: number;
   sender_id: number;

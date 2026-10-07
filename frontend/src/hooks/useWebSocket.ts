@@ -123,6 +123,10 @@ export function useWebSocket(activeConversationId?: number) {
                   client_id: "", // Pending messages from backend don't have client_id
                   created_at: pm.created_at,
                   status: pm.status,
+                  reply_to_message_id: pm.reply_to_message_id ?? undefined,
+                  reply_to_sender_id: pm.reply_to_sender_id ?? undefined,
+                  reply_to_content: pm.reply_to_content ?? undefined,
+                  reply_to_deleted: pm.reply_to_deleted,
                 };
 
                 if (!byConversation.has(pm.conversation_id)) {
@@ -211,8 +215,15 @@ export function useWebSocket(activeConversationId?: number) {
           const payload = message.payload as MessageAckPayload;
           // payload.created_at is the server's authoritative, persisted
           // timestamp -- must replace the optimistic entry's client-clock
-          // send-time guess, not just patch the id.
-          confirmMessage(payload.client_id, payload.message_id, payload.created_at);
+          // send-time guess, not just patch the id. The reply preview is
+          // also server-confirmed here (the optimistic entry already had
+          // one computed client-side from local state, see sendMessage).
+          confirmMessage(payload.client_id, payload.message_id, payload.created_at, {
+            reply_to_message_id: payload.reply_to_message_id ?? undefined,
+            reply_to_sender_id: payload.reply_to_sender_id ?? undefined,
+            reply_to_content: payload.reply_to_content ?? undefined,
+            reply_to_deleted: payload.reply_to_deleted,
+          });
           break;
         }
 
@@ -226,6 +237,10 @@ export function useWebSocket(activeConversationId?: number) {
             client_id: "",
             created_at: payload.created_at,
             status: payload.status as ReceiptStatus,
+            reply_to_message_id: payload.reply_to_message_id ?? undefined,
+            reply_to_sender_id: payload.reply_to_sender_id ?? undefined,
+            reply_to_content: payload.reply_to_content ?? undefined,
+            reply_to_deleted: payload.reply_to_deleted,
           };
           addMessage(msg);
 
@@ -323,15 +338,36 @@ export function useWebSocket(activeConversationId?: number) {
     ]
   );
 
-  // Send message
+  // Send message. replyToMessageId is optional; when set, the optimistic
+  // bubble computes its own reply preview from whatever's already loaded
+  // locally (messageStore's `messages`) so the quote renders immediately,
+  // before the server's ACK confirms/overwrites it with the authoritative
+  // version (see the MESSAGE_ACK handler above).
   const sendMessage = useCallback(
-    async (conversationId: number, content: string) => {
+    async (conversationId: number, content: string, replyToMessageId?: number) => {
       if (!clientRef.current || !clientRef.current.isConnected()) {
         setError("Not connected to server");
         return;
       }
 
       const clientId = uuidv4();
+
+      let replyPreview: Pick<
+        Message,
+        "reply_to_message_id" | "reply_to_sender_id" | "reply_to_content" | "reply_to_deleted"
+      > = {};
+      if (replyToMessageId !== undefined) {
+        const localMessages = useMessageStore.getState().messages[conversationId] || [];
+        const original = localMessages.find((m) => m.id === replyToMessageId);
+        replyPreview = original
+          ? {
+              reply_to_message_id: original.id,
+              reply_to_sender_id: original.sender_id,
+              reply_to_content: original.content,
+              reply_to_deleted: false,
+            }
+          : { reply_to_message_id: replyToMessageId, reply_to_deleted: true };
+      }
 
       // Create optimistic message. sender_id must be the real current user id
       // from the start (confirmMessage only ever patches `id`, never
@@ -346,12 +382,13 @@ export function useWebSocket(activeConversationId?: number) {
         client_id: clientId,
         created_at: new Date().toISOString(),
         status: "pending" as ReceiptStatus,
+        ...replyPreview,
       };
 
       addOptimisticMessage(clientId, optimistic);
 
       try {
-        await clientRef.current.sendMessage(conversationId, content, clientId);
+        await clientRef.current.sendMessage(conversationId, content, clientId, replyToMessageId);
       } catch (err) {
         const error = err instanceof Error ? err.message : "Failed to send message";
         setError(error);

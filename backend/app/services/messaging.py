@@ -25,6 +25,52 @@ from app.models import (
 from app.time_utils import utc_isoformat
 
 
+REPLY_PREVIEW_MAX_LENGTH = 200
+
+
+def build_reply_preview(message: Message, db: Session) -> dict:
+    """
+    Build the denormalized reply-preview fields (reply_to_sender_id,
+    reply_to_content, reply_to_deleted) for a message's WS/REST payload.
+
+    Denormalized (looked up once here, not left for the frontend to
+    resolve) so a reply still renders correctly even on a path where the
+    original message was never loaded into that client's local state --
+    e.g. the RECONNECTED pending-messages list. reply_to_deleted=True
+    covers the case where reply_to_message_id was set at send time but the
+    original message's row no longer resolves (e.g. a future message-delete
+    feature) -- the frontend shows "Original message unavailable" instead
+    of erroring.
+    """
+    if message.reply_to_message_id is None:
+        return {
+            "reply_to_message_id": None,
+            "reply_to_sender_id": None,
+            "reply_to_content": None,
+            "reply_to_deleted": False,
+        }
+
+    original = db.query(Message).filter(Message.id == message.reply_to_message_id).first()
+    if not original:
+        return {
+            "reply_to_message_id": message.reply_to_message_id,
+            "reply_to_sender_id": None,
+            "reply_to_content": None,
+            "reply_to_deleted": True,
+        }
+
+    content = original.content
+    if len(content) > REPLY_PREVIEW_MAX_LENGTH:
+        content = content[:REPLY_PREVIEW_MAX_LENGTH] + "…"
+
+    return {
+        "reply_to_message_id": original.id,
+        "reply_to_sender_id": original.sender_id,
+        "reply_to_content": content,
+        "reply_to_deleted": False,
+    }
+
+
 class MessagingService:
     """
     Service for message operations.
@@ -39,7 +85,8 @@ class MessagingService:
         conversation_id: int,
         client_id: str,
         content: str,
-        db: Session
+        db: Session,
+        reply_to_message_id: int | None = None,
     ) -> Message:
         """
         Send message to conversation.
@@ -112,6 +159,21 @@ class MessagingService:
             # Return existing message (don't create duplicate)
             return existing_message
 
+        # Step 4b: Validate reply_to_message_id, if provided. A reply target
+        # must exist AND belong to this same conversation -- anything else
+        # (unknown id, wrong conversation, already-deleted message) is
+        # treated as "no reply" rather than failing the whole send, so a
+        # stale/bad reply reference from the client can never block sending
+        # a message.
+        validated_reply_to_id: int | None = None
+        if reply_to_message_id is not None:
+            reply_target = db.query(Message).filter(
+                Message.id == reply_to_message_id,
+                Message.conversation_id == conversation_id,
+            ).first()
+            if reply_target:
+                validated_reply_to_id = reply_target.id
+
         # Step 5: Create new message
         try:
             message = Message(
@@ -119,7 +181,8 @@ class MessagingService:
                 sender_id=sender_id,
                 content=content,
                 client_id=client_id,
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
+                reply_to_message_id=validated_reply_to_id,
             )
             db.add(message)
             db.flush()  # Get message.id before creating receipts

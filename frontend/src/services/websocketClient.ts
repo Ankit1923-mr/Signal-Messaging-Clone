@@ -128,7 +128,8 @@ export class WebSocketClient {
   async sendMessage(
     conversationId: number,
     content: string,
-    clientId: string
+    clientId: string,
+    replyToMessageId?: number
   ): Promise<void> {
     if (!this.isConnected()) {
       throw new Error("WebSocket not connected");
@@ -142,6 +143,7 @@ export class WebSocketClient {
       conversation_id: conversationId,
       client_id: clientId,
       content,
+      ...(replyToMessageId !== undefined ? { reply_to_message_id: replyToMessageId } : {}),
     };
 
     const message: WebSocketMessage = {

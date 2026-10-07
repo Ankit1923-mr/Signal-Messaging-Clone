@@ -44,6 +44,7 @@ from app.schemas import (
     MessageHistoryResponse,
     UserResponse,
 )
+from app.services.messaging import build_reply_preview
 from app.time_utils import utc_isoformat
 
 router = APIRouter(tags=["conversations"])
@@ -173,6 +174,7 @@ def get_conversation_messages(
             content=m.content,
             created_at=utc_isoformat(m.created_at),
             status=receipt.status if receipt else "pending",
+            **build_reply_preview(m, db),
         ))
     return result
 

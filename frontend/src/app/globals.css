@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Enables the `dark:` utility variant based on a `.dark` class on <html>
+   (set by useTheme.ts), rather than Tailwind v4's media-query-only default.
+   This is what lets Settings -> Appearance -> "Dark" force dark mode
+   regardless of the OS preference, while "System" tracks it live. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 html {
   scroll-behavior: smooth;
 }
