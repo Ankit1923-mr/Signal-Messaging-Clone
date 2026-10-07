@@ -13,6 +13,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-use-websocket": "^4.13.0",
+    "uuid": "^14.0.2",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
