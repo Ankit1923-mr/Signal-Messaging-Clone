@@ -152,13 +152,11 @@ export function useWebSocket() {
 
         case MessageType.USER_TYPING: {
           const payload = message.payload as UserTypingPayload;
-          // TODO: Implement typing UI
-          // For now, just track in store
-          if (payload.typing) {
-            // Show typing indicator
-          } else {
-            // Hide typing indicator
-          }
+          messageStore.setTyping(
+            payload.conversation_id,
+            payload.sender_id,
+            payload.typing
+          );
           break;
         }
       }

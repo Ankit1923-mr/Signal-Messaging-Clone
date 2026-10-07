@@ -419,6 +419,7 @@ async def _handle_typing(user_id: int, data: dict, manager: ConnectionManager, d
                 await manager.broadcast_to_user(member_id, {
                     "type": MessageType.USER_TYPING,
                     "payload": {
+                        "conversation_id": conversation_id,
                         "sender_id": user_id,
                         "typing": typing
                     }

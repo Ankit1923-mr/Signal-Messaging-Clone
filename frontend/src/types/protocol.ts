@@ -113,6 +113,7 @@ export interface TypingPayload {
 }
 
 export interface UserTypingPayload {
+  conversation_id: number;
   sender_id: number;
   typing: boolean;
 }
