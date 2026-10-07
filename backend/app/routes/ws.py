@@ -68,6 +68,14 @@ async def websocket_endpoint(websocket: WebSocket):
     heartbeat_task = None
 
     try:
+        # Step 0: Validate origin (prevent cross-origin WebSocket)
+        # FastAPI doesn't auto-validate WebSocket origins like HTTP CORS
+        origin = websocket.headers.get("origin")
+        allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+        if origin and origin not in allowed_origins:
+            await websocket.close(code=1008, reason="Invalid origin")
+            return
+
         # Step 1: Extract and validate JWT from httpOnly cookie
         # WebSocket handshake includes cookies automatically from browser
         access_token = websocket.cookies.get("access_token")
