@@ -26,6 +26,7 @@ export function ConversationList({
   const conversations = useMessageStore((state) => state.conversations);
   const unreadCounts = useMessageStore((state) => state.unreadCounts);
   const messages = useMessageStore((state) => state.messages);
+  const isUserOnline = useMessageStore((state) => state.isUserOnline);
 
   // Sort conversations by latest activity
   const sortedConversations = [...conversations].sort((a, b) => {
@@ -61,6 +62,12 @@ export function ConversationList({
         const conversationMessages = messages[conversation.id] || [];
         const lastMessage = conversationMessages[conversationMessages.length - 1];
 
+        // Check if any member is online (for 1:1 or group conversations)
+        const onlineMembers = conversation.members.filter((m) =>
+          isUserOnline(m.id)
+        );
+        const hasOnlineMembers = onlineMembers.length > 0;
+
         return (
           <button
             key={conversation.id}
@@ -70,11 +77,16 @@ export function ConversationList({
             }`}
           >
             <div className="flex justify-between items-start gap-2">
-              {/* Conversation name and preview */}
+              {/* Conversation name, preview, and online indicator */}
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-sm text-gray-900 truncate">
-                  {conversation.name || "Unnamed Conversation"}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-sm text-gray-900 truncate">
+                    {conversation.name || "Unnamed Conversation"}
+                  </h3>
+                  {hasOnlineMembers && (
+                    <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+                  )}
+                </div>
                 {lastMessage && (
                   <p className="text-xs text-gray-500 truncate">
                     {lastMessage.content.substring(0, 50)}

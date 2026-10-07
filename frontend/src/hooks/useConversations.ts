@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMessageStore } from "@/store/messageStore";
 import { useAuthStore } from "@/store/authStore";
+import { getBroadcastService } from "@/services/broadcastService";
 import { Conversation } from "@/types/protocol";
 
 /**
@@ -39,6 +40,8 @@ export function useConversations() {
     (conversationId: number) => {
       setActiveConversationId(conversationId);
       markConversationAsRead(conversationId);
+      // Broadcast to other tabs
+      getBroadcastService().broadcastConversationSelected(conversationId);
     },
     [markConversationAsRead]
   );
@@ -72,6 +75,25 @@ export function useConversations() {
       setActiveConversationId(conversations[0].id);
     }
   }, [activeConversationId, conversations]);
+
+  // Subscribe to broadcast messages from other tabs
+  useEffect(() => {
+    const broadcastService = getBroadcastService();
+
+    const handler = (message: any) => {
+      if (message.type === "conversation-selected") {
+        setActiveConversationId(message.conversationId);
+      } else if (message.type === "conversation-read") {
+        markConversationAsRead(message.conversationId);
+      }
+    };
+
+    broadcastService.subscribe(handler);
+
+    return () => {
+      broadcastService.unsubscribe(handler);
+    };
+  }, [markConversationAsRead]);
 
   return {
     activeConversationId,
