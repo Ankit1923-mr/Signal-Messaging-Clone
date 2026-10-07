@@ -173,22 +173,22 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         existing = db.query(User).filter(User.email == normalized_value).first()
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail="Email already registered"
+                status_code=409,
+                detail="An account with this email already exists"
             )
     elif field_name == "phone_number":
         existing = db.query(User).filter(User.phone_number == normalized_value).first()
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail="Phone number already registered"
+                status_code=409,
+                detail="An account with this phone number already exists"
             )
     else:  # username
         existing = db.query(User).filter(User.username == normalized_value).first()
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail="Username already taken"
+                status_code=409,
+                detail="An account with this username already exists"
             )
 
     # Step 3: Generate username if needed
@@ -205,6 +205,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         username=username,
         password_hash=hash_password(data.password),
         display_name=data.display_name,
+        avatar_url=data.avatar_url,
         **{field_name: normalized_value}  # Set email/phone_number/username
     )
 
@@ -263,9 +264,19 @@ def login(data: LoginRequest, request: Request, response: Response, db: Session 
         (User.phone_number == username)
     ).first()
 
-    if not user or not verify_password(data.password, user.password_hash):
-        # Generic error: no user enumeration
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user:
+        # User doesn't exist
+        raise HTTPException(
+            status_code=404,
+            detail="Account not found. Please check your username or phone number, or register a new account."
+        )
+
+    if not verify_password(data.password, user.password_hash):
+        # User exists but password is wrong
+        raise HTTPException(
+            status_code=401,
+            detail="Wrong credentials. Please check your username and password."
+        )
 
     # Step 4: Generate tokens
     access_token = create_access_token(user.id)
@@ -387,3 +398,53 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     clear_auth_cookies(response)
 
     return LogoutResponse()
+
+
+# ============================================================================
+# 5. POST /auth/verify-otp - Verify OTP and Complete Registration
+# ============================================================================
+
+@router.post("/verify-otp", response_model=LoginResponse)
+def verify_otp(data: dict, response: Response, db: Session = Depends(get_db)):
+    """
+    Verify OTP and complete registration/authentication.
+
+    For the assignment, mock OTP is: 123456
+    """
+    user_id = data.get("user_id")
+    otp = data.get("otp")
+
+    if not user_id or not otp:
+        raise HTTPException(status_code=400, detail="user_id and otp required")
+
+    # Verify OTP (mocked for assignment)
+    if otp != "123456":
+        raise HTTPException(status_code=401, detail="Invalid OTP. Please check the code and try again.")
+
+    # Get user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Generate tokens
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+
+    # Store refresh token in database
+    refresh_token_hash = hash_csrf_token(refresh_token)
+    refresh_record = RefreshToken(
+        user_id=user.id,
+        token_hash=refresh_token_hash,
+        expires_at=datetime.utcnow() + timedelta(days=30)
+    )
+    db.add(refresh_record)
+    db.commit()
+
+    # Set auth cookies
+    set_auth_cookies(response, access_token, refresh_token)
+
+    return LoginResponse(
+        user_id=user.id,
+        username=user.username,
+        display_name=user.display_name
+    )

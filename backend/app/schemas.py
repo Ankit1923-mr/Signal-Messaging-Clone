@@ -14,6 +14,7 @@ class RegisterRequest(BaseModel):
     identifier: str = Field(..., min_length=3, max_length=255, description="Email, phone, or username")
     password: str = Field(..., min_length=8, max_length=255, description="Password (8+ chars)")
     display_name: str = Field(..., min_length=1, max_length=100, description="Display name")
+    avatar_url: str | None = Field(None, description="Avatar URL (optional)")
 
 
 class LoginRequest(BaseModel):
@@ -71,6 +72,27 @@ class LogoutResponse(BaseModel):
 class CSRFResponse(BaseModel):
     """CSRF token response."""
     csrf_token: str
+
+
+class VerifyOTPRequest(BaseModel):
+    """OTP verification request."""
+    user_id: int
+    otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP")
+
+
+class VerifyOTPResponse(BaseModel):
+    """OTP verification success response."""
+    status: str = "verified"
+    user_id: int
+    username: str
+    display_name: str
+
+
+class ErrorResponse(BaseModel):
+    """Error response."""
+    code: str
+    message: str
+    detail: str | None = None
 
 
 # ============================================================================
