@@ -27,6 +27,7 @@ from app.models import User, Conversation, ConversationMembers
 from app.services.connections import ConnectionManager
 from app.services.messaging import MessagingService
 from app.services.receipts import ReceiptService
+from app.time_utils import utc_isoformat
 from app.ws_protocol import MessageType
 
 router = APIRouter()
@@ -117,6 +118,14 @@ async def websocket_endpoint(websocket: WebSocket):
         # Step 2: Accept WebSocket connection
         await websocket.accept()
 
+        # Was this user already online (another tab/session) before this
+        # connection? Captured BEFORE registering, so that manager.connect()
+        # below can't make it look like they were already online. This is
+        # the only signal that decides whether to broadcast USER_ONLINE —
+        # contacts should be told "online" once, on the transition from zero
+        # connections to one, not again for every extra tab.
+        was_online_before = manager.is_user_online(user_id)
+
         # Step 3: Register connection (multi-tab support)
         await manager.connect(user_id, websocket)
 
@@ -152,7 +161,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "sender_id": msg.sender_id,
                     "conversation_id": msg.conversation_id,
                     "content": msg.content,
-                    "created_at": msg.created_at.isoformat(),
+                    "created_at": utc_isoformat(msg.created_at),
                     "status": "pending"
                 })
 
@@ -161,7 +170,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "payload": {
                     "pending_messages": pending_list,
                     "online_users": online_users,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": utc_isoformat(datetime.utcnow())
                 }
             })
         else:
@@ -171,12 +180,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 "payload": {
                     "user_id": user_id,
                     "online_users": online_users,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": utc_isoformat(datetime.utcnow())
                 }
             })
 
-        # Step 4b: Broadcast online status to conversation members
-        await _broadcast_user_online(user_id, manager, db)
+        # Step 4b: Broadcast online status to conversation members — only on
+        # the first connection (zero -> one), not on every extra tab.
+        if not was_online_before:
+            await _broadcast_user_online(user_id, manager, db)
 
         # Step 5: Start heartbeat task (ping/pong)
         heartbeat_task = asyncio.create_task(
@@ -250,10 +261,16 @@ async def websocket_endpoint(websocket: WebSocket):
             heartbeat_task.cancel()
 
         if user_id:
-            # Broadcast offline status before disconnecting
-            if db and db.is_active:
-                await _broadcast_user_offline(user_id, manager, db)
+            # Remove THIS connection first, then check whether any other
+            # connection (another tab) remains for this user. Only broadcast
+            # USER_OFFLINE on the final disconnect (one -> zero) — otherwise
+            # closing one of several open tabs would incorrectly tell every
+            # contact this user went offline while they're still connected
+            # via another tab. manager.is_user_online() is the single
+            # authoritative definition of online/offline used everywhere.
             await manager.disconnect(user_id, websocket)
+            if db and db.is_active and not manager.is_user_online(user_id):
+                await _broadcast_user_offline(user_id, manager, db)
 
         if db:
             db.close()
@@ -319,7 +336,7 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
             "payload": {
                 "message_id": message.id,
                 "client_id": client_id,
-                "created_at": message.created_at.isoformat(),
+                "created_at": utc_isoformat(message.created_at),
                 "status": "pending"
             }
         })
@@ -334,7 +351,7 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
                         "conversation_id": conversation_id,
                         "sender_id": user_id,
                         "content": message.content,
-                        "created_at": message.created_at.isoformat(),
+                        "created_at": utc_isoformat(message.created_at),
                         "status": "pending"
                     }
                 })
@@ -389,7 +406,7 @@ async def _handle_receipt(user_id: int, data: dict, manager: ConnectionManager, 
 
         # Broadcast receipt_update to sender (ALL tabs for multi-tab sync)
         timestamp_field = f"{status}_at"
-        timestamp_value = getattr(receipt, timestamp_field).isoformat() if getattr(receipt, timestamp_field) else None
+        timestamp_value = utc_isoformat(getattr(receipt, timestamp_field)) if getattr(receipt, timestamp_field) else None
 
         payload_response = {
             "message_id": message_id,
@@ -552,7 +569,7 @@ async def _broadcast_user_online(user_id: int, manager: ConnectionManager, db: S
                 "type": MessageType.USER_ONLINE,
                 "payload": {
                     "user_id": user_id,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": utc_isoformat(datetime.utcnow())
                 }
             })
 
@@ -598,7 +615,7 @@ async def _broadcast_user_offline(user_id: int, manager: ConnectionManager, db: 
                 "type": MessageType.USER_OFFLINE,
                 "payload": {
                     "user_id": user_id,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": utc_isoformat(datetime.utcnow())
                 }
             })
 

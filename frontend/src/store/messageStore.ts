@@ -57,7 +57,7 @@ interface MessageStoreActions {
   // Message management
   addMessage: (message: Message) => void;
   addOptimisticMessage: (clientId: string, message: Message) => void;
-  confirmMessage: (clientId: string, messageId: number) => void;
+  confirmMessage: (clientId: string, messageId: number, createdAt?: string) => void;
   getMessages: (conversationId: number) => Message[];
 
   // Receipt tracking
@@ -144,8 +144,19 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
       get().addMessage(message);
     },
 
-    // Replace optimistic with confirmed message
-    confirmMessage: (clientId: string, messageId: number) => {
+    // Replace optimistic with confirmed message.
+    //
+    // createdAt (from the server's MESSAGE_ACK payload) replaces the
+    // optimistic entry's client-clock `new Date()` timestamp captured at
+    // send time. Previously this only patched `id`, so the sender's own
+    // message kept showing whatever time the client's local clock said at
+    // the moment "Send" was clicked -- forever, even after the real,
+    // authoritative, persisted created_at was available. Any client/server
+    // clock drift made that timestamp permanently wrong. The recipient's
+    // view (MESSAGE_RECEIVED) and the post-refresh history fetch both
+    // already used the server's created_at directly; this brings the
+    // sender's own live view in line with the same single source of truth.
+    confirmMessage: (clientId: string, messageId: number, createdAt?: string) => {
       set((state) => {
         const message = state.pendingMessages[clientId];
         if (!message) return state;
@@ -153,8 +164,13 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
         // Remove from pending
         const { [clientId]: _, ...remaining } = state.pendingMessages;
 
-        // Update message with real ID
-        const updated = { ...message, id: messageId };
+        // Update message with real ID and (if provided) the server's
+        // authoritative created_at.
+        const updated = {
+          ...message,
+          id: messageId,
+          ...(createdAt ? { created_at: createdAt } : {}),
+        };
 
         // Update in messages array
         const messages = { ...state.messages };
@@ -317,12 +333,14 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
       });
     },
 
+    // Replaces (not merges) the online set. This is sent as an authoritative
+    // snapshot on every CONNECTED/RECONNECTED — it must fully replace the
+    // previous set, otherwise a peer who went offline while we were
+    // disconnected/reconnecting would incorrectly stay "online" forever
+    // (a union-only update never removes anyone). Live USER_ONLINE/
+    // USER_OFFLINE events still update it incrementally between snapshots.
     setOnlineUsersSnapshot: (userIds: number[]) => {
-      set((state) => {
-        const online = new Set(state.onlineUsers);
-        userIds.forEach((id) => online.add(id));
-        return { onlineUsers: online };
-      });
+      set(() => ({ onlineUsers: new Set(userIds) }));
     },
 
     // Check if user is online

@@ -83,7 +83,7 @@ export function MessageItem({ message, conversationId, sender }: MessageItemProp
 function formatTime(isoString: string): string {
   try {
     const date = new Date(isoString);
-    return date.toLocaleTimeString("en-US", {
+    return date.toLocaleTimeString(undefined, {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,

@@ -8,12 +8,12 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { ConversationList } from "@/components/ConversationList";
 import { ChatHeader } from "@/components/ChatHeader";
 import { Avatar } from "@/components/Avatar";
-import { NewMessagePanel } from "@/components/NewMessagePanel";
+import { AddContactPanel } from "@/components/AddContactPanel";
 import { MessageList } from "@/components/messages/MessageList";
 import { MessageInput } from "@/components/messages/MessageInput";
 import { TypingIndicator } from "@/components/messages/TypingIndicator";
 
-type SidebarView = "conversations" | "new-message";
+type SidebarView = "conversations" | "add-contact";
 
 export default function ConversationsPage() {
   const router = useRouter();
@@ -23,7 +23,7 @@ export default function ConversationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // WebSocket connects as soon as the user is authenticated (cookie-based auth).
-  const { isConnected, reconnecting } = useWebSocket(activeConversationId ?? undefined);
+  const { isConnected, reconnecting, disconnect } = useWebSocket(activeConversationId ?? undefined);
 
   // Load user on mount
   useEffect(() => {
@@ -50,6 +50,12 @@ export default function ConversationsPage() {
   }
 
   const handleLogout = async () => {
+    // Close the WebSocket BEFORE clearing auth state: the backend only
+    // broadcasts this user as offline (and removes their connection) when
+    // the socket actually closes (see ws.py's `finally` block). Without
+    // this, other users kept seeing a logged-out user as "Online"
+    // indefinitely, since logout() alone never touched the live connection.
+    disconnect();
     // logout() always clears local auth state, even if the backend call
     // fails, so navigation here is unconditional.
     await logout();
@@ -62,8 +68,8 @@ export default function ConversationsPage() {
     <div className="flex h-screen overflow-hidden bg-gray-100">
       {/* Sidebar: fixed width, never overlaps the chat pane */}
       <div className="w-[340px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden">
-        {sidebarView === "new-message" ? (
-          <NewMessagePanel
+        {sidebarView === "add-contact" ? (
+          <AddContactPanel
             onBack={() => setSidebarView("conversations")}
             onConversationCreated={(conversationId) => selectConversation(conversationId)}
           />
@@ -109,13 +115,13 @@ export default function ConversationsPage() {
               searchQuery={searchQuery}
             />
 
-            {/* New message action */}
+            {/* Add Contact action */}
             <div className="p-3 border-t border-gray-200 flex-shrink-0">
               <button
-                onClick={() => setSidebarView("new-message")}
+                onClick={() => setSidebarView("add-contact")}
                 className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
               >
-                + New message
+                + Add Contact
               </button>
             </div>
           </>

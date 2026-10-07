@@ -91,6 +91,17 @@ class ConversationResponse(BaseModel):
     members: list[UserResponse]
 
 
+class MessageHistoryResponse(BaseModel):
+    """A single persisted message, for hydrating a conversation's history."""
+    id: int
+    conversation_id: int
+    sender_id: int
+    client_id: str
+    content: str
+    created_at: str  # ISO 8601
+    status: str  # pending/delivered/read — see get_conversation_messages() for whose receipt this is
+
+
 class VerifyOTPRequest(BaseModel):
     """OTP verification request."""
     user_id: int

@@ -6,18 +6,23 @@ import { conversationService } from "@/services/conversationService";
 import { useMessageStore } from "@/store/messageStore";
 import { Avatar } from "@/components/Avatar";
 
-interface NewMessagePanelProps {
+interface AddContactPanelProps {
   onBack: () => void;
   onConversationCreated: (conversationId: number) => void;
 }
 
 /**
- * "New message" sidebar state (Signal Desktop pattern): replaces the normal
+ * "Add Contact" sidebar state (Signal Desktop pattern): replaces the normal
  * conversation list in place, rather than opening as a floating modal.
- * Search an existing backend user, select them, and the sidebar returns to
- * the normal conversation list with the new/found conversation selected.
+ *
+ * This is a contact picker, not a message composer: selecting a contact
+ * never drafts or sends anything here. It just finds-or-creates the
+ * persistent 1:1 conversation with that user (via the existing idempotent
+ * POST /conversations/direct — same endpoint, same find-or-create backend
+ * behavior as before) and opens it. Selecting the same contact again later
+ * always resolves to that same conversation; it is never duplicated.
  */
-export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePanelProps) {
+export function AddContactPanel({ onBack, onConversationCreated }: AddContactPanelProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
@@ -39,7 +44,7 @@ export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePan
       const users = await conversationService.searchUsers(q);
       setResults(users);
     } catch (err) {
-      setError("Failed to search users");
+      setError("Failed to search contacts");
     } finally {
       setSearching(false);
     }
@@ -51,16 +56,19 @@ export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePan
     debounceRef.current = setTimeout(() => runSearch(value), 300);
   };
 
-  const handleSelectUser = async (user: User) => {
+  const handleSelectContact = async (user: User) => {
     setCreatingUserId(user.id);
     setError(null);
     try {
+      // Find-or-create: the backend returns the existing conversation if
+      // one already exists for this pair (direct_pair_key is UNIQUE), or
+      // creates it once. Either way this never produces a duplicate.
       const conversation = await conversationService.createDirectConversation(user.id);
       addConversation(conversation);
       onConversationCreated(conversation.id);
       onBack();
     } catch (err) {
-      setError("Failed to start conversation");
+      setError("Failed to open conversation");
       setCreatingUserId(null);
     }
   };
@@ -78,7 +86,7 @@ export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePan
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h2 className="font-semibold text-gray-900">New message</h2>
+        <h2 className="font-semibold text-gray-900">Add Contact</h2>
       </div>
 
       {/* Search input */}
@@ -88,7 +96,7 @@ export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePan
           autoFocus
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
-          placeholder="Search people..."
+          placeholder="Search contacts..."
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
       </div>
@@ -109,14 +117,14 @@ export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePan
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.964 0a9 9 0 10-11.964 0m11.964 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <p className="text-sm font-medium text-gray-600">No users found</p>
+            <p className="text-sm font-medium text-gray-600">No contacts found</p>
             <p className="text-xs text-gray-400 mt-1">Try a different username or name</p>
           </div>
         ) : (
           results.map((user) => (
             <button
               key={user.id}
-              onClick={() => handleSelectUser(user)}
+              onClick={() => handleSelectContact(user)}
               disabled={creatingUserId !== null}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
@@ -126,7 +134,7 @@ export function NewMessagePanel({ onBack, onConversationCreated }: NewMessagePan
                 <p className="text-xs text-gray-500 truncate">@{user.username}</p>
               </div>
               {creatingUserId === user.id && (
-                <span className="text-xs text-gray-400 flex-shrink-0">Starting...</span>
+                <span className="text-xs text-gray-400 flex-shrink-0">Opening...</span>
               )}
             </button>
           ))

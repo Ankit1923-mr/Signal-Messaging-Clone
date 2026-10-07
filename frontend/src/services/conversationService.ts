@@ -1,16 +1,18 @@
 /**
  * Conversation Service
  *
- * REST client for the new minimal conversation endpoints
- * (app/routes/conversations.py):
+ * REST client for the conversation endpoints (app/routes/conversations.py):
  * - GET  /users/search
+ * - GET  /conversations                       list the current user's conversations
  * - POST /conversations/direct
+ * - GET  /conversations/{id}
+ * - GET  /conversations/{id}/messages          persisted message history
  *
  * Cookie-based auth (same httpOnly access_token cookie as everything else).
  */
 
 import axios from "axios";
-import { User, Conversation } from "@/types/protocol";
+import { User, Conversation, Message, ReceiptStatus } from "@/types/protocol";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -26,6 +28,16 @@ interface ConversationApiResponse {
   members: User[];
 }
 
+interface MessageHistoryApiResponse {
+  id: number;
+  conversation_id: number;
+  sender_id: number;
+  client_id: string;
+  content: string;
+  created_at: string;
+  status: string;
+}
+
 function toConversation(data: ConversationApiResponse): Conversation {
   return {
     id: data.id,
@@ -36,6 +48,18 @@ function toConversation(data: ConversationApiResponse): Conversation {
   };
 }
 
+function toMessage(data: MessageHistoryApiResponse): Message {
+  return {
+    id: data.id,
+    conversation_id: data.conversation_id,
+    sender_id: data.sender_id,
+    content: data.content,
+    client_id: data.client_id,
+    created_at: data.created_at,
+    status: data.status as ReceiptStatus,
+  };
+}
+
 export const conversationService = {
   /** Search for a user to start a conversation with (excludes self). */
   async searchUsers(query: string): Promise<User[]> {
@@ -43,6 +67,17 @@ export const conversationService = {
       params: { q: query },
     });
     return response.data;
+  },
+
+  /**
+   * List every conversation the current user is a member of. This is the
+   * source-of-truth hydration call on page load/refresh — the database,
+   * not localStorage or Zustand, is authoritative for which conversations
+   * exist.
+   */
+  async listConversations(): Promise<Conversation[]> {
+    const response = await apiClient.get<ConversationApiResponse[]>("/conversations");
+    return response.data.map(toConversation);
   },
 
   /** Find or create the direct conversation with otherUserId. Idempotent. */
@@ -61,5 +96,13 @@ export const conversationService = {
   async getConversation(conversationId: number): Promise<Conversation> {
     const response = await apiClient.get<ConversationApiResponse>(`/conversations/${conversationId}`);
     return toConversation(response.data);
+  },
+
+  /** Fetch persisted message history for a conversation (oldest first). */
+  async getMessages(conversationId: number): Promise<Message[]> {
+    const response = await apiClient.get<MessageHistoryApiResponse[]>(
+      `/conversations/${conversationId}/messages`
+    );
+    return response.data.map(toMessage);
   },
 };

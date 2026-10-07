@@ -209,7 +209,10 @@ export function useWebSocket(activeConversationId?: number) {
 
         case MessageType.MESSAGE_ACK: {
           const payload = message.payload as MessageAckPayload;
-          confirmMessage(payload.client_id, payload.message_id);
+          // payload.created_at is the server's authoritative, persisted
+          // timestamp -- must replace the optimistic entry's client-clock
+          // send-time guess, not just patch the id.
+          confirmMessage(payload.client_id, payload.message_id, payload.created_at);
           break;
         }
 

@@ -22,6 +22,7 @@ from app.models import (
     ConversationReadCursor,
     Conversation,
 )
+from app.time_utils import utc_isoformat
 
 
 class ReceiptService:
@@ -230,8 +231,8 @@ class ReceiptService:
             summary[receipt.status] += 1
             summary["details"][receipt.recipient_id] = {
                 "status": receipt.status,
-                "delivered_at": receipt.delivered_at.isoformat() if receipt.delivered_at else None,
-                "read_at": receipt.read_at.isoformat() if receipt.read_at else None,
+                "delivered_at": utc_isoformat(receipt.delivered_at) if receipt.delivered_at else None,
+                "read_at": utc_isoformat(receipt.read_at) if receipt.read_at else None,
             }
 
         return summary

@@ -1,8 +1,13 @@
 """
 Conversation and user-search endpoints.
 
-Minimal REST surface needed for the frontend's "+ New Conversation" flow:
+Minimal REST surface needed for the frontend's conversation list + "Add
+Contact" flow:
 - GET  /users/search              Find a user to start a direct conversation with
+- GET  /conversations              List the current user's existing conversations
+                                   (DB is the source of truth — this is what
+                                   hydrates the frontend on page load/refresh;
+                                   see useConversations.ts).
 - POST /conversations/direct      Find-or-create a 1:1 conversation (idempotent)
 - GET  /conversations/{id}        Fetch conversation metadata (members etc.)
                                    for a conversation the caller didn't
@@ -10,6 +15,10 @@ Minimal REST surface needed for the frontend's "+ New Conversation" flow:
                                    brand-new conversation's first message can
                                    learn who it's with (see useWebSocket.ts's
                                    MESSAGE_RECEIVED handler).
+- GET  /conversations/{id}/messages  Fetch persisted message history for a
+                                   conversation, so messages survive a page
+                                   refresh instead of only existing in the
+                                   live-session Zustand store.
 
 Authenticated via the same httpOnly access_token cookie used elsewhere
 (see app.dependencies.get_current_user_from_cookie) — no new auth
@@ -23,8 +32,14 @@ from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user_from_cookie
-from app.models import Conversation, ConversationMembers, User
-from app.schemas import ConversationResponse, CreateDirectConversationRequest, UserResponse
+from app.models import Conversation, ConversationMembers, Message, MessageReceipt, User
+from app.schemas import (
+    ConversationResponse,
+    CreateDirectConversationRequest,
+    MessageHistoryResponse,
+    UserResponse,
+)
+from app.time_utils import utc_isoformat
 
 router = APIRouter(tags=["conversations"])
 
@@ -67,6 +82,89 @@ def search_users(
 
     users = query.order_by(User.display_name).limit(20).all()
     return [UserResponse.model_validate(u) for u in users]
+
+
+@router.get("/conversations", response_model=list[ConversationResponse])
+def list_conversations(
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    """
+    List every conversation the current user is a member of.
+
+    This is the hydration source for the frontend on page load/refresh:
+    before this endpoint existed, the conversation list only ever came from
+    live events (POST /conversations/direct's own response, or the
+    MESSAGE_RECEIVED handler's GET /conversations/{id} fetch) held in
+    Zustand's in-memory store — nothing repopulated it after a refresh reset
+    that store to empty. Read-only: does not create or modify anything.
+    """
+    membership_rows = db.query(ConversationMembers).filter(
+        ConversationMembers.user_id == current_user.id
+    ).all()
+    conversation_ids = [m.conversation_id for m in membership_rows]
+    if not conversation_ids:
+        return []
+
+    conversations = db.query(Conversation).filter(
+        Conversation.id.in_(conversation_ids)
+    ).all()
+    return [_conversation_to_response(c, db) for c in conversations]
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageHistoryResponse])
+def get_conversation_messages(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch persisted message history for a conversation, oldest first.
+
+    Needed so messages already stored in the database remain visible after
+    a page refresh — previously nothing ever fetched message history; the
+    frontend only ever saw messages that arrived live over the WebSocket
+    during the current session, or (for messages still undelivered) the
+    bounded "pending" recovery list sent on reconnect.
+
+    Does not change the receipt state machine: `status` just reports each
+    message's already-existing receipt row (read-only), using whichever
+    receipt is relevant to the viewer --- for a direct (1:1) conversation
+    there is exactly one receipt per message, so no new logic is needed to
+    pick the right one.
+    """
+    is_member = db.query(ConversationMembers).filter(
+        ConversationMembers.conversation_id == conversation_id,
+        ConversationMembers.user_id == current_user.id,
+    ).first()
+    if not is_member:
+        raise HTTPException(status_code=403, detail="Not a member of this conversation")
+
+    messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.created_at.asc()).all()
+
+    message_ids = [m.id for m in messages]
+    receipts_by_message = {}
+    if message_ids:
+        for receipt in db.query(MessageReceipt).filter(
+            MessageReceipt.message_id.in_(message_ids)
+        ).all():
+            receipts_by_message[receipt.message_id] = receipt
+
+    result = []
+    for m in messages:
+        receipt = receipts_by_message.get(m.id)
+        result.append(MessageHistoryResponse(
+            id=m.id,
+            conversation_id=m.conversation_id,
+            sender_id=m.sender_id if m.sender_id is not None else 0,
+            client_id=m.client_id,
+            content=m.content,
+            created_at=utc_isoformat(m.created_at),
+            status=receipt.status if receipt else "pending",
+        ))
+    return result
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
