@@ -1,20 +1,23 @@
 "use client";
 
-import { Message, ReceiptStatus } from "@/types/protocol";
+import { Message, User } from "@/types/protocol";
 import { ReceiptStatusBadge } from "./ReceiptStatus";
 import { useMessageReadObserver } from "@/hooks/useMessageReadObserver";
 import { useAuthStore } from "@/store/authStore";
+import { Avatar } from "@/components/Avatar";
 
 interface MessageItemProps {
   message: Message;
   conversationId: number;
+  /** The message sender's profile, when known (used for the received-message avatar). */
+  sender?: User;
 }
 
 /**
  * Single message item with read observer
  * Handles its own read receipt tracking
  */
-export function MessageItem({ message, conversationId }: MessageItemProps) {
+export function MessageItem({ message, conversationId, sender }: MessageItemProps) {
   const user = useAuthStore((state) => state.user);
   const readObserverRef = useMessageReadObserver(message.id, conversationId);
 
@@ -24,8 +27,17 @@ export function MessageItem({ message, conversationId }: MessageItemProps) {
   return (
     <div
       ref={readObserverRef}
-      className={`flex ${isSent ? "justify-end" : "justify-start"}`}
+      className={`flex items-end gap-2 ${isSent ? "justify-end" : "justify-start"}`}
     >
+      {/* Sender avatar — only shown on received messages, matching Signal's layout */}
+      {!isSent && (
+        <Avatar
+          avatarUrl={sender?.avatar_url}
+          seed={sender?.username || String(message.sender_id)}
+          size={28}
+        />
+      )}
+
       <div
         className={`max-w-xs px-4 py-2 rounded-lg ${
           isSent

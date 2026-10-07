@@ -1,7 +1,9 @@
 "use client";
 
 import { useMessageStore } from "@/store/messageStore";
+import { useAuthStore } from "@/store/authStore";
 import { Conversation } from "@/types/protocol";
+import { Avatar, GroupAvatar } from "@/components/Avatar";
 
 interface ConversationListProps {
   activeConversationId?: number;
@@ -27,6 +29,7 @@ export function ConversationList({
   const unreadCounts = useMessageStore((state) => state.unreadCounts);
   const messages = useMessageStore((state) => state.messages);
   const isUserOnline = useMessageStore((state) => state.isUserOnline);
+  const currentUser = useAuthStore((state) => state.user);
 
   // Sort conversations by latest activity
   const sortedConversations = [...conversations].sort((a, b) => {
@@ -48,65 +51,81 @@ export function ConversationList({
 
   if (conversations.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-        <p>No conversations yet</p>
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12">
+        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-8 h-8 text-gray-400">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </div>
+        <p className="text-sm font-medium text-gray-600">No conversations yet</p>
+        <p className="text-xs text-gray-400 mt-1">Start a new conversation to begin messaging</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto space-y-1">
+    <div className="flex-1 overflow-y-auto">
       {sortedConversations.map((conversation) => {
         const isActive = conversation.id === activeConversationId;
         const unreadCount = unreadCounts[conversation.id] || 0;
         const conversationMessages = messages[conversation.id] || [];
         const lastMessage = conversationMessages[conversationMessages.length - 1];
 
-        // Check if any member is online (for 1:1 or group conversations)
-        const onlineMembers = conversation.members.filter((m) =>
-          isUserOnline(m.id)
+        // For a direct conversation, the avatar/name shown is the OTHER member
+        const otherMember =
+          conversation.type === "direct"
+            ? conversation.members.find((m) => m.id !== currentUser?.id)
+            : undefined;
+
+        const onlineMembers = conversation.members.filter(
+          (m) => m.id !== currentUser?.id && isUserOnline(m.id)
         );
         const hasOnlineMembers = onlineMembers.length > 0;
+
+        const displayName =
+          conversation.name || otherMember?.display_name || "Unnamed Conversation";
 
         return (
           <button
             key={conversation.id}
             onClick={() => onSelectConversation(conversation.id)}
-            className={`w-full px-4 py-3 text-left transition-colors hover:bg-gray-100 ${
-              isActive ? "bg-blue-50 border-l-4 border-blue-600" : ""
+            className={`w-full px-3 py-3 text-left transition-colors border-b border-gray-100 hover:bg-gray-50 ${
+              isActive ? "bg-blue-50" : ""
             }`}
           >
-            <div className="flex justify-between items-start gap-2">
-              {/* Conversation name, preview, and online indicator */}
+            <div className="flex items-center gap-3">
+              {conversation.type === "group" ? (
+                <GroupAvatar size={48} />
+              ) : (
+                <Avatar
+                  avatarUrl={otherMember?.avatar_url}
+                  seed={otherMember?.username || String(conversation.id)}
+                  size={48}
+                  online={hasOnlineMembers}
+                />
+              )}
+
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex justify-between items-baseline gap-2">
                   <h3 className="font-semibold text-sm text-gray-900 truncate">
-                    {conversation.name || "Unnamed Conversation"}
+                    {displayName}
                   </h3>
-                  {hasOnlineMembers && (
-                    <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+                  {lastMessage && (
+                    <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                      {formatRelativeTime(lastMessage.created_at)}
+                    </span>
                   )}
                 </div>
-                {lastMessage && (
-                  <p className="text-xs text-gray-500 truncate">
-                    {lastMessage.content.substring(0, 50)}
+                <div className="flex justify-between items-center gap-2 mt-0.5">
+                  <p className="text-sm text-gray-500 truncate">
+                    {lastMessage ? lastMessage.content.substring(0, 50) : "No messages yet"}
                   </p>
-                )}
-              </div>
-
-              {/* Unread badge and timestamp */}
-              <div className="flex items-center gap-2">
-                {lastMessage && (
-                  <span className="text-xs text-gray-400 whitespace-nowrap">
-                    {formatRelativeTime(lastMessage.created_at)}
-                  </span>
-                )}
-
-                {unreadCount > 0 && (
-                  <span className="bg-blue-600 text-white text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                )}
+                  {unreadCount > 0 && (
+                    <span className="bg-blue-600 text-white text-xs font-semibold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center flex-shrink-0">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </button>

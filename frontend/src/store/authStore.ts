@@ -24,6 +24,40 @@ interface PendingVerification {
   user_id: number;
   username: string;
   display_name: string;
+  avatar_url?: string;
+}
+
+/**
+ * Local cache mapping username -> avatar_url.
+ *
+ * The backend's login/verify-otp responses only return {user_id, username,
+ * display_name} — not avatar_url — even though it's persisted server-side.
+ * Rather than changing that API contract, we remember the avatar chosen at
+ * registration time in localStorage (frontend-only, no backend change) so a
+ * later login on the same browser can still show the right avatar.
+ */
+const AVATAR_CACHE_KEY = "avatarCache";
+
+function cacheAvatar(username: string, avatarUrl?: string) {
+  if (!avatarUrl) return;
+  try {
+    const raw = localStorage.getItem(AVATAR_CACHE_KEY);
+    const cache = raw ? JSON.parse(raw) : {};
+    cache[username] = avatarUrl;
+    localStorage.setItem(AVATAR_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Non-critical; avatar just falls back to a seed-derived default.
+  }
+}
+
+function getCachedAvatar(username: string): string | undefined {
+  try {
+    const raw = localStorage.getItem(AVATAR_CACHE_KEY);
+    if (!raw) return undefined;
+    return JSON.parse(raw)[username];
+  } catch {
+    return undefined;
+  }
 }
 
 interface AuthStore {
@@ -64,12 +98,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ isLoading: true, error: null, errorCode: null });
     try {
       const response = await authService.register(data);
+      cacheAvatar(response.username, data.avatar_url);
       set({
         isLoading: false,
         pendingVerification: {
           user_id: response.user_id,
           username: response.username,
           display_name: response.display_name,
+          avatar_url: data.avatar_url,
         },
       });
     } catch (err) {
@@ -96,6 +132,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         id: response.user_id,
         username: response.username,
         display_name: response.display_name,
+        avatar_url: pending.avatar_url,
       };
       persistUser(user);
 
@@ -126,10 +163,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const response = await authService.login(data, csrf_token);
 
       // Step 3: Build user object from response and persist (profile only, not the JWT)
+      // avatar_url isn't in the login response, so fall back to our local cache (see cacheAvatar).
       const user: User = {
         id: response.user_id,
         username: response.username,
         display_name: response.display_name,
+        avatar_url: getCachedAvatar(response.username),
       };
       persistUser(user);
 

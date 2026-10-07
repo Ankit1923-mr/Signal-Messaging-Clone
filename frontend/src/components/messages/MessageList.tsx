@@ -13,6 +13,9 @@ export function MessageList({ conversationId }: MessageListProps) {
   const messages = useMessageStore((state) =>
     state.getMessages(conversationId)
   );
+  const conversation = useMessageStore((state) =>
+    state.conversations.find((c) => c.id === conversationId)
+  );
   const user = useAuthStore((state) => state.user);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -42,6 +45,7 @@ export function MessageList({ conversationId }: MessageListProps) {
               key={`${message.id}-${message.client_id}`}
               message={message}
               conversationId={conversationId}
+              sender={conversation?.members.find((m) => m.id === message.sender_id)}
             />
           ))}
           <div ref={messagesEndRef} />

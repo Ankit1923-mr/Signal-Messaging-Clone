@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { Avatar } from "@/components/Avatar";
+import { buildAvatarUrl, getAvatarPickerSeeds } from "@/lib/avatar";
 
-const AVATAR_OPTIONS = ["👨", "👩", "🧑", "🧔", "👨‍💻", "👩‍💻"];
+const AVATAR_SEEDS = getAvatarPickerSeeds();
 
 type Mode = "login" | "register";
 
@@ -33,7 +35,7 @@ export default function AuthPage() {
     password: "",
     displayName: "",
   });
-  const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
+  const [avatarSeed, setAvatarSeed] = useState(AVATAR_SEEDS[0]);
   const [otp, setOtp] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -84,7 +86,7 @@ export default function AuthPage() {
         identifier: formData.identifier,
         password: formData.password,
         display_name: formData.displayName,
-        avatar_url: avatar,
+        avatar_url: buildAvatarUrl(avatarSeed),
       });
       // On success, pendingVerification is set and the OTP screen renders below.
     } catch {
@@ -318,18 +320,19 @@ export default function AuthPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Profile Avatar</label>
               <div className="flex gap-2 flex-wrap">
-                {AVATAR_OPTIONS.map((emoji) => (
+                {AVATAR_SEEDS.map((seed) => (
                   <button
-                    key={emoji}
+                    key={seed}
                     type="button"
-                    onClick={() => setAvatar(emoji)}
-                    className={`w-12 h-12 flex items-center justify-center text-2xl rounded-full border-2 transition-colors ${
-                      avatar === emoji
-                        ? "border-blue-600 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
+                    onClick={() => setAvatarSeed(seed)}
+                    className={`p-0.5 rounded-full border-2 transition-colors ${
+                      avatarSeed === seed
+                        ? "border-blue-600"
+                        : "border-transparent hover:border-gray-300"
                     }`}
+                    title={seed}
                   >
-                    {emoji}
+                    <Avatar seed={seed} size={48} />
                   </button>
                 ))}
               </div>
