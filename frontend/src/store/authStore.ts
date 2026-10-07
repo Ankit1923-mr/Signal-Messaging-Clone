@@ -4,14 +4,27 @@
  * Manages auth state on the client side:
  * - Current user info
  * - Loading/error states
- * - Login/logout/register actions
+ * - Two-step registration (register -> OTP verify) / login / logout
  *
- * Backend handles session via cookies.
- * Store handles UI state only.
+ * Backend handles session via httpOnly cookies. This store never holds the
+ * JWT — only non-sensitive UI state (user profile, pending verification).
  */
 
 import { create } from "zustand";
-import { authService, User, RegisterRequest, LoginRequest } from "@/services/authService";
+import {
+  authService,
+  User,
+  RegisterRequest,
+  LoginRequest,
+  AuthError,
+  AuthErrorCode,
+} from "@/services/authService";
+
+interface PendingVerification {
+  user_id: number;
+  username: string;
+  display_name: string;
+}
 
 interface AuthStore {
   // State
@@ -19,40 +32,92 @@ interface AuthStore {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  errorCode: AuthErrorCode | null;
+  pendingVerification: PendingVerification | null;
 
   // Actions
   register: (data: RegisterRequest) => Promise<void>;
+  verifyOtp: (otp: string) => Promise<void>;
   login: (data: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
   loadUser: () => Promise<void>;
   clearError: () => void;
+  cancelVerification: () => void;
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
+function persistUser(user: User) {
+  localStorage.setItem("user", JSON.stringify(user));
+}
+
+export const useAuthStore = create<AuthStore>((set, get) => ({
   // Initial state
   user: null,
   isAuthenticated: false,
   isLoading: true,
   error: null,
+  errorCode: null,
+  pendingVerification: null,
 
-  // Register new user
+  // Step 1 of registration: create the (unverified) account.
+  // Does NOT authenticate — backend issues no cookies until OTP succeeds.
   register: async (data: RegisterRequest) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, errorCode: null });
     try {
       const response = await authService.register(data);
-      // After register, user still needs to login
-      // Don't auto-login
-      set({ isLoading: false });
+      set({
+        isLoading: false,
+        pendingVerification: {
+          user_id: response.user_id,
+          username: response.username,
+          display_name: response.display_name,
+        },
+      });
     } catch (err) {
-      const error = err instanceof Error ? err.message : "Registration failed";
-      set({ isLoading: false, error });
+      const authErr = err as AuthError;
+      set({ isLoading: false, error: authErr.message, errorCode: authErr.code });
       throw err;
     }
   },
 
+  // Step 2 of registration: verify the mock OTP (123456 in development).
+  // On success, the account becomes verified and authenticated (cookies set).
+  verifyOtp: async (otp: string) => {
+    const pending = get().pendingVerification;
+    if (!pending) {
+      set({ error: "No pending registration to verify.", errorCode: "UNKNOWN" });
+      return;
+    }
+
+    set({ isLoading: true, error: null, errorCode: null });
+    try {
+      const response = await authService.verifyOtp({ user_id: pending.user_id, otp });
+
+      const user: User = {
+        id: response.user_id,
+        username: response.username,
+        display_name: response.display_name,
+      };
+      persistUser(user);
+
+      set({
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+        pendingVerification: null,
+      });
+    } catch (err) {
+      const authErr = err as AuthError;
+      set({ isLoading: false, error: authErr.message, errorCode: authErr.code });
+      throw err;
+    }
+  },
+
+  // Abandon the pending OTP step and return to the login/register chooser.
+  cancelVerification: () => set({ pendingVerification: null, error: null, errorCode: null }),
+
   // Login
   login: async (data: LoginRequest) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, errorCode: null });
     try {
       // Step 1: Get CSRF token
       const { csrf_token } = await authService.getCSRFToken();
@@ -60,15 +125,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
       // Step 2: Login with CSRF token
       const response = await authService.login(data, csrf_token);
 
-      // Step 3: Build user object from response
+      // Step 3: Build user object from response and persist (profile only, not the JWT)
       const user: User = {
         id: response.user_id,
         username: response.username,
         display_name: response.display_name,
       };
-
-      // Step 4: Store user in localStorage for persistence across refreshes
-      localStorage.setItem("user", JSON.stringify(user));
+      persistUser(user);
 
       set({
         user,
@@ -76,8 +139,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
         isLoading: false,
       });
     } catch (err) {
-      const error = err instanceof Error ? err.message : "Login failed";
-      set({ isLoading: false, error, isAuthenticated: false });
+      const authErr = err as AuthError;
+      set({ isLoading: false, error: authErr.message, errorCode: authErr.code, isAuthenticated: false });
       throw err;
     }
   },
@@ -87,7 +150,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       await authService.logout();
-      // Clear localStorage
       localStorage.removeItem("user");
       set({ user: null, isAuthenticated: false, isLoading: false });
     } catch (err) {
@@ -132,5 +194,5 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   // Clear error
-  clearError: () => set({ error: null }),
+  clearError: () => set({ error: null, errorCode: null }),
 }));
