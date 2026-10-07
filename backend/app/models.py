@@ -177,6 +177,8 @@ class MessageReceipt(Base):
     recipient_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     status = Column(String(20), default="pending", nullable=False)  # pending, delivered, read
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    delivered_at = Column(DateTime, nullable=True)  # When message reached recipient's device
+    read_at = Column(DateTime, nullable=True)  # When recipient opened message
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
