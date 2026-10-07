@@ -3,12 +3,18 @@ Database configuration with FK enforcement.
 🔑 CRITICAL: Foreign key enforcement is explicitly enabled for SQLite.
 """
 
+import os
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-# Database URL
-DATABASE_URL = "sqlite:///./messages.db"
+# Database URL. Local development falls back to the relative SQLite file
+# that's always lived at the backend's working directory. Production (Render)
+# supplies DATABASE_URL pointing at the persistent disk's mount path (e.g.
+# "sqlite:////var/data/messages.db") so the file survives redeploys/restarts
+# -- see DEPLOYMENT.md. Still SQLite either way; no schema or engine change.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./messages.db")
 
 # Create engine
 engine = create_engine(

@@ -15,6 +15,7 @@ Connection flow:
 """
 
 import asyncio
+import os
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
@@ -32,6 +33,18 @@ router = APIRouter()
 
 # Global connection manager (shared across all WebSocket connections)
 manager = ConnectionManager()
+
+# Allowed WebSocket handshake origins. FRONTEND_URL is the same env var CORS
+# uses in app/main.py — in production it's the deployed Vercel origin; the
+# localhost entries stay available in every environment for local dev tools
+# (e.g. hitting the backend directly at 127.0.0.1) without needing a second
+# env var just for this.
+_configured_frontend_origin = os.getenv("FRONTEND_URL", "http://localhost:3000")
+ALLOWED_WS_ORIGINS = {
+    _configured_frontend_origin,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
 
 # Constants
 WS_HEARTBEAT_INTERVAL = 30  # Send ping every 30 seconds
@@ -71,8 +84,7 @@ async def websocket_endpoint(websocket: WebSocket):
         # Step 0: Validate origin (prevent cross-origin WebSocket)
         # FastAPI doesn't auto-validate WebSocket origins like HTTP CORS
         origin = websocket.headers.get("origin")
-        allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
-        if origin and origin not in allowed_origins:
+        if origin and origin not in ALLOWED_WS_ORIGINS:
             await websocket.close(code=1008, reason="Invalid origin")
             return
 

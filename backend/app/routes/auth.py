@@ -30,6 +30,7 @@ from app.security import (
     create_refresh_token,
     generate_csrf_token,
     generate_unique_username,
+    get_cookie_samesite_flag,
     get_cookie_secure_flag,
     hash_csrf_token,
     hash_password,
@@ -47,13 +48,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     """Set authentication cookies (httponly, secure, samesite)."""
     secure = get_cookie_secure_flag()
+    samesite = get_cookie_samesite_flag()
 
     response.set_cookie(
         "access_token",
         value=access_token,
         httponly=True,
         secure=secure,
-        samesite="strict",
+        samesite=samesite,
         max_age=7 * 24 * 60 * 60,  # 7 days
         path="/",
     )
@@ -63,7 +65,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         value=refresh_token,
         httponly=True,
         secure=secure,
-        samesite="strict",
+        samesite=samesite,
         max_age=30 * 24 * 60 * 60,  # 30 days
         path="/",
     )
@@ -72,13 +74,14 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
 def set_session_cookie(response: Response, session_id: str):
     """Set session cookie for CSRF bootstrap."""
     secure = get_cookie_secure_flag()
+    samesite = get_cookie_samesite_flag()
 
     response.set_cookie(
         "session_id",
         value=session_id,
         httponly=True,
         secure=secure,
-        samesite="strict",
+        samesite=samesite,
         max_age=3600,  # 1 hour
         path="/",
     )
@@ -366,12 +369,14 @@ def refresh_access_token(request: Request, response: Response, db: Session = Dep
     new_access_token = create_access_token(user_id)
 
     # Step 8: Set new access token cookie
+    secure = get_cookie_secure_flag()
+    samesite = get_cookie_samesite_flag()
     response.set_cookie(
         "access_token",
         value=new_access_token,
         httponly=True,
-        secure=get_cookie_secure_flag(),
-        samesite="strict",
+        secure=secure,
+        samesite=samesite,
         max_age=7 * 24 * 60 * 60,
         path="/",
     )

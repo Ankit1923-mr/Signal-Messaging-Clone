@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: signal-clone-backend
+    runtime: python
+    rootDir: backend
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: signal-clone-sqlite
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: JWT_SECRET
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:////var/data/messages.db

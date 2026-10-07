@@ -180,3 +180,20 @@ def get_cookie_secure_flag() -> bool:
     Development: Secure=False (allows HTTP localhost)
     """
     return os.getenv("ENVIRONMENT", "development") == "production"
+
+
+def get_cookie_samesite_flag() -> str:
+    """
+    Determine the SameSite attribute for auth cookies.
+
+    Production (Vercel frontend, Render backend) is cross-site: the two
+    origins don't share a registrable domain, so SameSite=Strict (or Lax)
+    cookies are withheld by the browser on every cross-site request and
+    WebSocket handshake, silently breaking auth. Cross-site cookies require
+    SameSite=None, which browsers additionally require to be paired with
+    Secure=True (already true in production via get_cookie_secure_flag()).
+
+    Development keeps Strict since the frontend and backend run on the same
+    host (localhost) there, and Strict is the more conservative default.
+    """
+    return "none" if os.getenv("ENVIRONMENT", "development") == "production" else "strict"
