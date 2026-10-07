@@ -16,7 +16,7 @@ Connection flow:
 
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
 import json
 
@@ -43,18 +43,16 @@ WS_HEARTBEAT_TIMEOUT = 60   # Close if no pong in 60 seconds
 # ============================================================================
 
 @router.websocket("/ws/messages")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    token: str = Query(...)
-):
+async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time messaging.
 
-    Query parameter:
-        token: JWT access token (from Component 2)
+    Authentication:
+        Browser sends access_token httpOnly cookie automatically.
+        FastAPI reads cookie from WebSocket handshake.
 
     Connection flow:
-    1. Validate JWT
+    1. Validate JWT from cookie
     2. Accept WebSocket
     3. Register connection (multi-tab)
     4. Send pending messages (offline reconnect)
@@ -70,8 +68,14 @@ async def websocket_endpoint(
     heartbeat_task = None
 
     try:
-        # Step 1: Validate JWT token BEFORE accepting connection
-        payload = verify_token(token)
+        # Step 1: Extract and validate JWT from httpOnly cookie
+        # WebSocket handshake includes cookies automatically from browser
+        access_token = websocket.cookies.get("access_token")
+        if not access_token:
+            await websocket.close(code=1008, reason="Missing token")
+            return
+
+        payload = verify_token(access_token)
         if not payload or payload.get("type") != "access":
             await websocket.close(code=1008, reason="Invalid token")
             return
