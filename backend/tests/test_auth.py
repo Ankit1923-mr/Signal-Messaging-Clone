@@ -371,6 +371,28 @@ def test_verify_otp_already_verified_rejected(client):
     assert "already verified" in otp_response.json()["detail"].lower()
 
 
+def test_register_with_plain_username(client, db_session):
+    """
+    Regression test: registering with a plain username (not email/phone)
+    must not crash. field_name == "username" previously caused a duplicate
+    'username' keyword argument TypeError when constructing the User model.
+    """
+    response = client.post("/auth/register", json={
+        "identifier": "testuser001",
+        "password": "password123",
+        "display_name": "Test User"
+    })
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == "testuser001"
+    assert data["display_name"] == "Test User"
+
+    user = db_session.query(User).filter(User.username == "testuser001").first()
+    assert user is not None
+    assert user.is_verified is False
+
+
 def test_login_requires_csrf(client):
     """
     Test: Login without CSRF token fails.

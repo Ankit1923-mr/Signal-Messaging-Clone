@@ -202,12 +202,16 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         username = generate_unique_username(base, existing_usernames)
 
     # Step 4: Create user
+    # username is always set explicitly above; only set email/phone_number here
+    # to avoid a duplicate 'username' keyword when field_name == "username"
+    extra_field = {} if field_name == "username" else {field_name: normalized_value}
+
     user = User(
         username=username,
         password_hash=hash_password(data.password),
         display_name=data.display_name,
         avatar_url=data.avatar_url,
-        **{field_name: normalized_value}  # Set email/phone_number/username
+        **extra_field
     )
 
     db.add(user)
