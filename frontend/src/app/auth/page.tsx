@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 
@@ -20,7 +20,12 @@ export default function AuthPage() {
     errorCode,
     isLoading,
     clearError,
+    loadUser,
   } = useAuthStore();
+
+  useEffect(() => {
+    loadUser();
+  }, [loadUser]);
 
   const [mode, setMode] = useState<Mode>("login");
   const [formData, setFormData] = useState({
