@@ -47,20 +47,32 @@ export function useWebSocket() {
           },
 
           onReconnected: (pending) => {
-            // Add pending messages to store
+            // Add pending messages grouped by conversation
             if (pending.length > 0) {
-              const convId = pending[0].conversation_id;
-              // Convert PendingMessage to Message format
-              const messages: Message[] = pending.map((pm) => ({
-                id: pm.message_id,
-                conversation_id: pm.conversation_id,
-                sender_id: pm.sender_id,
-                content: pm.content,
-                client_id: "", // Pending messages from backend don't have client_id
-                created_at: pm.created_at,
-                status: pm.status,
-              }));
-              messageStore.addPendingMessages(convId, messages);
+              // Group by conversation_id to handle multi-conversation recovery
+              const byConversation = new Map<number, Message[]>();
+
+              pending.forEach((pm) => {
+                const msg: Message = {
+                  id: pm.message_id,
+                  conversation_id: pm.conversation_id,
+                  sender_id: pm.sender_id,
+                  content: pm.content,
+                  client_id: "", // Pending messages from backend don't have client_id
+                  created_at: pm.created_at,
+                  status: pm.status,
+                };
+
+                if (!byConversation.has(pm.conversation_id)) {
+                  byConversation.set(pm.conversation_id, []);
+                }
+                byConversation.get(pm.conversation_id)!.push(msg);
+              });
+
+              // Add each conversation's messages separately
+              byConversation.forEach((messages, convId) => {
+                messageStore.addPendingMessages(convId, messages);
+              });
             }
             messageStore.setConnected(true);
             messageStore.setReconnecting(false);
