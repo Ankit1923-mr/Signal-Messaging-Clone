@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useMessageStore } from "@/store/messageStore";
+import { useAuthStore } from "@/store/authStore";
 import { Conversation } from "@/types/protocol";
 
 /**
@@ -20,6 +21,7 @@ export function useConversations() {
     number | null
   >(null);
 
+  const user = useAuthStore((state) => state.user);
   const conversations = useMessageStore((state) => state.conversations);
   const messages = useMessageStore((state) => state.messages);
   const unreadCounts = useMessageStore((state) => state.unreadCounts);
@@ -43,12 +45,15 @@ export function useConversations() {
 
   // Update unread counts when messages change
   useEffect(() => {
+    if (!user) return;
+
     conversations.forEach((conversation) => {
       const conversationMessages = messages[conversation.id] || [];
 
-      // Count unread messages (status !== "read")
+      // Count unread messages from OTHER users (not sender's own messages)
+      // Unread = status is not "read" AND sender is not the current user
       const unreadMessages = conversationMessages.filter(
-        (msg) => msg.status !== "read"
+        (msg) => msg.status !== "read" && msg.sender_id !== user.id
       );
 
       const count = unreadMessages.length;
@@ -59,7 +64,7 @@ export function useConversations() {
         updateUnreadCount(conversation.id, count);
       }
     });
-  }, [conversations, messages, unreadCounts, updateUnreadCount]);
+  }, [conversations, messages, unreadCounts, updateUnreadCount, user]);
 
   // Auto-select first conversation if none selected
   useEffect(() => {
