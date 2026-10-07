@@ -14,6 +14,9 @@ import { MessageInput } from "@/components/messages/MessageInput";
 import { TypingIndicator } from "@/components/messages/TypingIndicator";
 
 export default function ConversationsPage() {
+  // TEMPORARY DEBUG: remove once the freeze/no-response bugfix is confirmed.
+  console.count("ConversationsPage render");
+
   const router = useRouter();
   const { user, isAuthenticated, isLoading, loadUser, logout } = useAuthStore();
   const { activeConversationId, conversations, selectConversation } = useConversations();
@@ -24,6 +27,7 @@ export default function ConversationsPage() {
 
   // Load user on mount
   useEffect(() => {
+    console.log("loadUser called");
     loadUser();
   }, [loadUser]);
 
@@ -47,6 +51,7 @@ export default function ConversationsPage() {
   }
 
   const handleLogout = async () => {
+    console.log("LOGOUT CLICKED"); // TEMPORARY DEBUG
     // logout() always clears local auth state, even if the backend call
     // fails, so navigation here is unconditional.
     await logout();
@@ -90,7 +95,10 @@ export default function ConversationsPage() {
         {/* New conversation action */}
         <div className="p-3 border-t border-gray-200">
           <button
-            onClick={() => setShowNewConversation(true)}
+            onClick={() => {
+              console.log("NEW CONVERSATION CLICKED"); // TEMPORARY DEBUG
+              setShowNewConversation(true);
+            }}
             className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
           >
             + New Conversation

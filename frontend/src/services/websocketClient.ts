@@ -44,6 +44,7 @@ export class WebSocketClient {
   private heartbeatTimeout: NodeJS.Timeout | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private isIntentionallyClosed: boolean = false;
+  private connectingPromise: Promise<void> | null = null;
 
   constructor(options: WebSocketClientOptions = {}) {
     this.url = WS_URL;
@@ -53,9 +54,23 @@ export class WebSocketClient {
   /**
    * Connect to WebSocket server.
    * Browser automatically sends httpOnly access_token cookie.
+   *
+   * Guarded against duplicate connections: this singleton is shared by
+   * every component that calls useWebSocket() (the conversations page,
+   * and every MessageItem's read-observer), so connect() can legitimately
+   * be called many times concurrently. Without this guard, each call
+   * would open a brand-new native WebSocket without closing the previous
+   * one, silently accumulating orphaned connections.
    */
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    if (this.ws?.readyState === WebSocket.CONNECTING && this.connectingPromise) {
+      return this.connectingPromise;
+    }
+
+    this.connectingPromise = new Promise((resolve, reject) => {
       try {
         this.isIntentionallyClosed = false;
         this.ws = new WebSocket(this.url);
@@ -78,6 +93,7 @@ export class WebSocketClient {
         };
 
         this.ws.onclose = () => {
+          this.connectingPromise = null;
           this.stopHeartbeat();
           if (!this.isIntentionallyClosed) {
             this.scheduleReconnect();
@@ -85,9 +101,12 @@ export class WebSocketClient {
           this.options.onClose?.();
         };
       } catch (err) {
+        this.connectingPromise = null;
         reject(err);
       }
     });
+
+    return this.connectingPromise;
   }
 
   /**

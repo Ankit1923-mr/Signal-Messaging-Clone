@@ -29,21 +29,57 @@ import {
 } from "@/types/protocol";
 
 export function useWebSocket() {
-  const messageStore = useMessageStore();
+  // IMPORTANT: select individual actions/fields instead of the whole store.
+  // Zustand's set() always returns a new top-level state object, even for
+  // unrelated field changes. A plain `useMessageStore()` call (no selector)
+  // re-renders on every store mutation and returns a new object reference
+  // each time — if that object is ever used as a useEffect dependency, the
+  // effect calling set() inside itself creates an infinite
+  // render -> effect -> set() -> new reference -> render loop. (This was
+  // exactly the previous bug here, and it froze the whole tab.)
+  // Action functions themselves ARE referentially stable across renders
+  // (Zustand only replaces state fields on set(), not the action closures),
+  // so selecting them individually gives us stable effect dependencies.
+  const setError = useMessageStore((state) => state.setError);
+  const setReconnecting = useMessageStore((state) => state.setReconnecting);
+  const setConnected = useMessageStore((state) => state.setConnected);
+  const addPendingMessages = useMessageStore((state) => state.addPendingMessages);
+  const confirmMessage = useMessageStore((state) => state.confirmMessage);
+  const addMessage = useMessageStore((state) => state.addMessage);
+  const addOptimisticMessage = useMessageStore((state) => state.addOptimisticMessage);
+  const updateReceiptTimestamps = useMessageStore((state) => state.updateReceiptTimestamps);
+  const setTyping = useMessageStore((state) => state.setTyping);
+  const setUserOnline = useMessageStore((state) => state.setUserOnline);
+  const setUserOffline = useMessageStore((state) => state.setUserOffline);
+  const isConnected = useMessageStore((state) => state.isConnected);
+  const reconnecting = useMessageStore((state) => state.reconnecting);
+  const error = useMessageStore((state) => state.error);
+
   const clientRef = useRef<WebSocketClient | null>(null);
   const typingTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
 
-  // Initialize WebSocket connection
+  // Initialize WebSocket connection. Runs exactly once per mount: the
+  // dependency array is empty because every value used inside is either a
+  // stable Zustand action or a ref — there is nothing that should ever
+  // cause this to reconnect on its own. The singleton in websocketClient.ts
+  // (plus its own guard against duplicate connects) is what actually keeps
+  // "one connection per tab" even across multiple components calling this
+  // hook (e.g. every MessageItem's read-observer also uses useWebSocket()).
+  // TEMPORARY DEBUG: remove once the freeze/no-response bugfix is confirmed.
+  console.count("useWebSocket render");
+
   useEffect(() => {
+    console.log("WS connect effect running (should log once per mount, not repeatedly)");
     const initializeConnection = async () => {
       try {
-        messageStore.setError(null);
-        messageStore.setReconnecting(true);
+        setError(null);
+        setReconnecting(true);
 
         const client = getWebSocketClient({
           onConnected: () => {
-            messageStore.setConnected(true);
-            messageStore.setReconnecting(false);
+            console.log("WS connect");
+            setConnected(true);
+            setReconnecting(false);
           },
 
           onReconnected: (pending) => {
@@ -71,23 +107,24 @@ export function useWebSocket() {
 
               // Add each conversation's messages separately
               byConversation.forEach((messages, convId) => {
-                messageStore.addPendingMessages(convId, messages);
+                addPendingMessages(convId, messages);
               });
             }
-            messageStore.setConnected(true);
-            messageStore.setReconnecting(false);
+            setConnected(true);
+            setReconnecting(false);
           },
 
           onMessage: (msg) => {
             handleServerMessage(msg);
           },
 
-          onError: (error) => {
-            messageStore.setError(error);
+          onError: (err) => {
+            setError(err);
           },
 
           onClose: () => {
-            messageStore.setConnected(false);
+            console.log("WS disconnect");
+            setConnected(false);
           },
         });
 
@@ -95,8 +132,8 @@ export function useWebSocket() {
         await client.connect();
       } catch (err) {
         const error = err instanceof Error ? err.message : "Connection failed";
-        messageStore.setError(error);
-        messageStore.setReconnecting(false);
+        setError(error);
+        setReconnecting(false);
       }
     };
 
@@ -107,7 +144,8 @@ export function useWebSocket() {
       // Don't disconnect on unmount — keep connection alive for multi-tab support
       // Only disconnect when user logs out
     };
-  }, [messageStore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Handle server messages
   const handleServerMessage = useCallback(
@@ -115,7 +153,7 @@ export function useWebSocket() {
       switch (message.type) {
         case MessageType.MESSAGE_ACK: {
           const payload = message.payload as MessageAckPayload;
-          messageStore.confirmMessage(payload.client_id, payload.message_id);
+          confirmMessage(payload.client_id, payload.message_id);
           break;
         }
 
@@ -130,7 +168,7 @@ export function useWebSocket() {
             created_at: payload.created_at,
             status: payload.status as ReceiptStatus,
           };
-          messageStore.addMessage(msg);
+          addMessage(msg);
 
           // Auto-send "delivered" receipt
           if (clientRef.current) {
@@ -141,7 +179,7 @@ export function useWebSocket() {
 
         case MessageType.RECEIPT_UPDATE: {
           const payload = message.payload as ReceiptUpdatePayload;
-          messageStore.updateReceiptTimestamps(
+          updateReceiptTimestamps(
             payload.message_id,
             payload.status as ReceiptStatus,
             payload.delivered_at,
@@ -152,35 +190,31 @@ export function useWebSocket() {
 
         case MessageType.USER_TYPING: {
           const payload = message.payload as UserTypingPayload;
-          messageStore.setTyping(
-            payload.conversation_id,
-            payload.sender_id,
-            payload.typing
-          );
+          setTyping(payload.conversation_id, payload.sender_id, payload.typing);
           break;
         }
 
         case MessageType.USER_ONLINE: {
           const payload = message.payload as any;
-          messageStore.setUserOnline(payload.user_id);
+          setUserOnline(payload.user_id);
           break;
         }
 
         case MessageType.USER_OFFLINE: {
           const payload = message.payload as any;
-          messageStore.setUserOffline(payload.user_id);
+          setUserOffline(payload.user_id);
           break;
         }
       }
     },
-    [messageStore]
+    [confirmMessage, addMessage, updateReceiptTimestamps, setTyping, setUserOnline, setUserOffline]
   );
 
   // Send message
   const sendMessage = useCallback(
     async (conversationId: number, content: string) => {
       if (!clientRef.current || !clientRef.current.isConnected()) {
-        messageStore.setError("Not connected to server");
+        setError("Not connected to server");
         return;
       }
 
@@ -197,16 +231,16 @@ export function useWebSocket() {
         status: "pending" as ReceiptStatus,
       };
 
-      messageStore.addOptimisticMessage(clientId, optimistic);
+      addOptimisticMessage(clientId, optimistic);
 
       try {
         await clientRef.current.sendMessage(conversationId, content, clientId);
       } catch (err) {
         const error = err instanceof Error ? err.message : "Failed to send message";
-        messageStore.setError(error);
+        setError(error);
       }
     },
-    [messageStore]
+    [setError, addOptimisticMessage]
   );
 
   // Send receipt (mark as read)
@@ -253,13 +287,13 @@ export function useWebSocket() {
     Object.values(typingTimeoutsRef.current).forEach(clearTimeout);
     typingTimeoutsRef.current = {};
 
-    messageStore.setConnected(false);
-  }, [messageStore]);
+    setConnected(false);
+  }, [setConnected]);
 
   return {
-    isConnected: messageStore.isConnected,
-    reconnecting: messageStore.reconnecting,
-    error: messageStore.error,
+    isConnected,
+    reconnecting,
+    error,
     sendMessage,
     sendReceipt,
     sendTyping,
