@@ -74,6 +74,23 @@ class CSRFResponse(BaseModel):
     csrf_token: str
 
 
+# ============================================================================
+# CONVERSATIONS
+# ============================================================================
+
+class CreateDirectConversationRequest(BaseModel):
+    """Request to create or find an existing 1:1 conversation."""
+    other_user_id: int
+
+
+class ConversationResponse(BaseModel):
+    """Conversation with resolved member profiles."""
+    id: int
+    type: str  # "direct" or "group"
+    name: str | None = None
+    members: list[UserResponse]
+
+
 class VerifyOTPRequest(BaseModel):
     """OTP verification request."""
     user_id: int

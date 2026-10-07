@@ -184,18 +184,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
-  // Logout
+  // Logout. Always clears local auth state and never throws, even if the
+  // backend call fails (network error, server down, etc.) — the user must
+  // never be stuck "logged in" client-side just because the revoke request
+  // didn't reach the server.
   logout: async () => {
     set({ isLoading: true, error: null });
     try {
       await authService.logout();
-      localStorage.removeItem("user");
-      set({ user: null, isAuthenticated: false, isLoading: false });
     } catch (err) {
-      const error = err instanceof Error ? err.message : "Logout failed";
-      set({ isLoading: false, error });
-      throw err;
+      // Best-effort: if this fails, the refresh_token row simply isn't
+      // revoked server-side yet. Local state is cleared below regardless.
+      console.error("Logout request to backend failed:", err);
     }
+    localStorage.removeItem("user");
+    set({ user: null, isAuthenticated: false, isLoading: false, error: null });
   },
 
   // Load current user (on app init)

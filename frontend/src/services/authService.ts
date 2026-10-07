@@ -214,7 +214,7 @@ export const authService = {
 // access token" — the refresh-and-retry behavior below must not fire for these,
 // or a wrong-password/wrong-OTP attempt would silently redirect to /auth instead
 // of showing the error on the current screen.
-const AUTH_ENDPOINTS = ["/auth/login", "/auth/verify-otp", "/auth/register", "/auth/csrf", "/auth/refresh"];
+const AUTH_ENDPOINTS = ["/auth/login", "/auth/verify-otp", "/auth/register", "/auth/csrf", "/auth/refresh", "/auth/logout"];
 
 function isAuthEndpoint(url?: string): boolean {
   return !!url && AUTH_ENDPOINTS.some((path) => url.includes(path));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useConversations } from "@/hooks/useConversations";
@@ -8,6 +8,7 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { ConversationList } from "@/components/ConversationList";
 import { ChatHeader } from "@/components/ChatHeader";
 import { Avatar } from "@/components/Avatar";
+import { NewConversationModal } from "@/components/NewConversationModal";
 import { MessageList } from "@/components/messages/MessageList";
 import { MessageInput } from "@/components/messages/MessageInput";
 import { TypingIndicator } from "@/components/messages/TypingIndicator";
@@ -16,6 +17,7 @@ export default function ConversationsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading, loadUser, logout } = useAuthStore();
   const { activeConversationId, conversations, selectConversation } = useConversations();
+  const [showNewConversation, setShowNewConversation] = useState(false);
 
   // WebSocket connects as soon as the user is authenticated (cookie-based auth).
   const { isConnected, reconnecting } = useWebSocket();
@@ -45,12 +47,10 @@ export default function ConversationsPage() {
   }
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      router.push("/auth");
-    } catch (err) {
-      console.error("Logout failed:", err);
-    }
+    // logout() always clears local auth state, even if the backend call
+    // fails, so navigation here is unconditional.
+    await logout();
+    router.push("/auth");
   };
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
@@ -89,11 +89,21 @@ export default function ConversationsPage() {
 
         {/* New conversation action */}
         <div className="p-3 border-t border-gray-200">
-          <button className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+          <button
+            onClick={() => setShowNewConversation(true)}
+            className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
+          >
             + New Conversation
           </button>
         </div>
       </div>
+
+      {showNewConversation && (
+        <NewConversationModal
+          onClose={() => setShowNewConversation(false)}
+          onConversationCreated={(conversationId) => selectConversation(conversationId)}
+        />
+      )}
 
       {/* Main area: chat header + messages + composer */}
       <div className="flex-1 flex flex-col bg-white">
