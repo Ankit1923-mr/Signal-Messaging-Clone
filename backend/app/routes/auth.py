@@ -22,6 +22,7 @@ from app.schemas import (
     RefreshResponse,
     RegisterRequest,
     RegisterResponse,
+    VerifyOTPRequest,
 )
 from app.security import (
     classify_identifier,
@@ -405,26 +406,25 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 # ============================================================================
 
 @router.post("/verify-otp", response_model=LoginResponse)
-def verify_otp(data: dict, response: Response, db: Session = Depends(get_db)):
+def verify_otp(data: VerifyOTPRequest, response: Response, db: Session = Depends(get_db)):
     """
     Verify OTP and complete registration/authentication.
 
     For the assignment, mock OTP is: 123456
     """
-    user_id = data.get("user_id")
-    otp = data.get("otp")
-
-    if not user_id or not otp:
-        raise HTTPException(status_code=400, detail="user_id and otp required")
-
     # Verify OTP (mocked for assignment)
-    if otp != "123456":
+    if data.otp != "123456":
         raise HTTPException(status_code=401, detail="Invalid OTP. Please check the code and try again.")
 
     # Get user
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Mark user as verified
+    user.is_verified = True
+    db.commit()
+    db.refresh(user)
 
     # Generate tokens
     access_token = create_access_token(user.id)
