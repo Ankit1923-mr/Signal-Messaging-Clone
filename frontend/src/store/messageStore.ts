@@ -37,6 +37,9 @@ interface MessageStoreState {
   // Typing indicators
   typingUsers: Record<number, TypingUser>; // conversation_id → { user_id, typing, timestamp }
 
+  // Online status
+  onlineUsers: Set<number>; // user_id → online status
+
   // Connection state
   isConnected: boolean;
   reconnecting: boolean;
@@ -68,6 +71,11 @@ interface MessageStoreActions {
   setTyping: (conversationId: number, userId: number, isTyping: boolean) => void;
   getTypingUsers: (conversationId: number) => TypingUser[];
 
+  // Online status
+  setUserOnline: (userId: number) => void;
+  setUserOffline: (userId: number) => void;
+  isUserOnline: (userId: number) => boolean;
+
   // Connection state
   setConnected: (connected: boolean) => void;
   setReconnecting: (reconnecting: boolean) => void;
@@ -87,6 +95,7 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
     receipts: {},
     unreadCounts: {},
     typingUsers: {},
+    onlineUsers: new Set(),
     isConnected: false,
     reconnecting: false,
     error: null,
@@ -244,6 +253,29 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
     getTypingUsers: (conversationId: number) => {
       const typing = get().typingUsers[conversationId];
       return typing ? [typing] : [];
+    },
+
+    // Set user online
+    setUserOnline: (userId: number) => {
+      set((state) => {
+        const online = new Set(state.onlineUsers);
+        online.add(userId);
+        return { onlineUsers: online };
+      });
+    },
+
+    // Set user offline
+    setUserOffline: (userId: number) => {
+      set((state) => {
+        const online = new Set(state.onlineUsers);
+        online.delete(userId);
+        return { onlineUsers: online };
+      });
+    },
+
+    // Check if user is online
+    isUserOnline: (userId: number) => {
+      return get().onlineUsers.has(userId);
     },
 
     // Connection state

@@ -159,6 +159,18 @@ export function useWebSocket() {
           );
           break;
         }
+
+        case MessageType.USER_ONLINE: {
+          const payload = message.payload as any;
+          messageStore.setUserOnline(payload.user_id);
+          break;
+        }
+
+        case MessageType.USER_OFFLINE: {
+          const payload = message.payload as any;
+          messageStore.setUserOffline(payload.user_id);
+          break;
+        }
       }
     },
     [messageStore]

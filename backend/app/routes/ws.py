@@ -141,6 +141,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 }
             })
 
+        # Step 4b: Broadcast online status to conversation members
+        await _broadcast_user_online(user_id, manager, db)
+
         # Step 5: Start heartbeat task (ping/pong)
         heartbeat_task = asyncio.create_task(
             _heartbeat_loop(websocket, user_id, manager)
@@ -213,6 +216,9 @@ async def websocket_endpoint(websocket: WebSocket):
             heartbeat_task.cancel()
 
         if user_id:
+            # Broadcast offline status before disconnecting
+            if db and db.is_active:
+                await _broadcast_user_offline(user_id, manager, db)
             await manager.disconnect(user_id, websocket)
 
         if db:
@@ -470,4 +476,96 @@ async def _heartbeat_loop(websocket: WebSocket, user_id: int, manager: Connectio
         pass
     except Exception:
         # Unexpected error - silently exit
+        pass
+
+
+async def _broadcast_user_online(user_id: int, manager: ConnectionManager, db: Session):
+    """
+    Broadcast USER_ONLINE to all members of conversations this user is in.
+
+    Args:
+        user_id: User who came online
+        manager: Connection manager
+        db: Database session
+
+    Broadcasts only to other users (not the user themselves).
+    Respects conversation membership privacy.
+    """
+
+    try:
+        # Get all conversations this user is a member of
+        user_conversations = db.query(ConversationMembers).filter(
+            ConversationMembers.user_id == user_id
+        ).all()
+
+        conversation_ids = [uc.conversation_id for uc in user_conversations]
+
+        if not conversation_ids:
+            return
+
+        # Get all members of these conversations
+        members = db.query(ConversationMembers).filter(
+            ConversationMembers.conversation_id.in_(conversation_ids),
+            ConversationMembers.user_id != user_id  # Exclude the user themselves
+        ).all()
+
+        # Broadcast to each member
+        recipient_ids = {m.user_id for m in members}  # Deduplicate
+        for recipient_id in recipient_ids:
+            await manager.broadcast_to_user(recipient_id, {
+                "type": MessageType.USER_ONLINE,
+                "payload": {
+                    "user_id": user_id,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+
+    except Exception:
+        # Silently ignore errors
+        pass
+
+
+async def _broadcast_user_offline(user_id: int, manager: ConnectionManager, db: Session):
+    """
+    Broadcast USER_OFFLINE to all members of conversations this user is in.
+
+    Args:
+        user_id: User who went offline
+        manager: Connection manager
+        db: Database session
+
+    Broadcasts only to other users (not the user themselves).
+    Respects conversation membership privacy.
+    """
+
+    try:
+        # Get all conversations this user is a member of
+        user_conversations = db.query(ConversationMembers).filter(
+            ConversationMembers.user_id == user_id
+        ).all()
+
+        conversation_ids = [uc.conversation_id for uc in user_conversations]
+
+        if not conversation_ids:
+            return
+
+        # Get all members of these conversations
+        members = db.query(ConversationMembers).filter(
+            ConversationMembers.conversation_id.in_(conversation_ids),
+            ConversationMembers.user_id != user_id  # Exclude the user themselves
+        ).all()
+
+        # Broadcast to each member
+        recipient_ids = {m.user_id for m in members}  # Deduplicate
+        for recipient_id in recipient_ids:
+            await manager.broadcast_to_user(recipient_id, {
+                "type": MessageType.USER_OFFLINE,
+                "payload": {
+                    "user_id": user_id,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
+
+    except Exception:
+        # Silently ignore errors
         pass

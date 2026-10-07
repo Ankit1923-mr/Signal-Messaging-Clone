@@ -47,6 +47,12 @@ export enum MessageType {
   // Server → Client: Another user is typing
   USER_TYPING = "user_typing",
 
+  // Server → Client: User came online
+  USER_ONLINE = "user_online",
+
+  // Server → Client: User went offline
+  USER_OFFLINE = "user_offline",
+
   // Server → Client: Connection established
   CONNECTED = "connected",
 
@@ -116,6 +122,16 @@ export interface UserTypingPayload {
   conversation_id: number;
   sender_id: number;
   typing: boolean;
+}
+
+export interface UserOnlinePayload {
+  user_id: number;
+  timestamp: string; // ISO 8601
+}
+
+export interface UserOfflinePayload {
+  user_id: number;
+  timestamp: string; // ISO 8601
 }
 
 export interface ConnectedPayload {
