@@ -279,6 +279,12 @@ def login(data: LoginRequest, request: Request, response: Response, db: Session 
             detail="Wrong credentials. Please check your username and password."
         )
 
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Account not verified. Please complete OTP verification."
+        )
+
     # Step 4: Generate tokens
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
@@ -420,6 +426,9 @@ def verify_otp(data: VerifyOTPRequest, response: Response, db: Session = Depends
     user = db.query(User).filter(User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if user.is_verified:
+        raise HTTPException(status_code=400, detail="Account is already verified.")
 
     # Mark user as verified
     user.is_verified = True

@@ -56,7 +56,7 @@ def test_users_table_structure():
     columns = inspector.get_columns('users')
     column_names = {col['name'] for col in columns}
 
-    expected = {'id', 'username', 'email', 'phone_number', 'password_hash', 'display_name', 'avatar_url', 'created_at'}
+    expected = {'id', 'username', 'email', 'phone_number', 'password_hash', 'display_name', 'avatar_url', 'is_verified', 'created_at'}
     assert column_names == expected
 
     # Check unique constraints

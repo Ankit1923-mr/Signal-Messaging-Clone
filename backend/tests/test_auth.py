@@ -9,6 +9,30 @@ from app.models import CSRFBootstrap, RefreshToken, Session as SessionModel, Use
 from app.security import hash_csrf_token
 
 
+def register_and_verify(client, identifier="user@example.com", password="password123",
+                         display_name="Test User"):
+    """
+    Helper: register a user and complete OTP verification (mock OTP 123456).
+    Returns the registration response data (user_id, username, display_name).
+    Login is gated on is_verified, so tests that need to log in must call this first.
+    """
+    response = client.post("/auth/register", json={
+        "identifier": identifier,
+        "password": password,
+        "display_name": display_name
+    })
+    assert response.status_code == 201
+    data = response.json()
+
+    otp_response = client.post("/auth/verify-otp", json={
+        "user_id": data["user_id"],
+        "otp": "123456"
+    })
+    assert otp_response.status_code == 200
+
+    return data
+
+
 # ============================================================================
 # 1. CSRF BOOTSTRAP TESTS
 # ============================================================================
@@ -81,12 +105,8 @@ def test_csrf_token_one_time_use(client, db_session):
     Test: CSRF token cannot be reused after login.
     Expected: First login succeeds, second login with same token fails.
     """
-    # Register user
-    client.post("/auth/register", json={
-        "identifier": "user@example.com",
-        "password": "password123",
-        "display_name": "Test User"
-    })
+    # Register and verify user (login requires is_verified=True)
+    register_and_verify(client, "user@example.com", "password123", "Test User")
 
     # Get CSRF token
     response = client.get("/auth/csrf")
@@ -137,12 +157,8 @@ def test_csrf_token_expiry(client, db_session):
     db_session.add(expired_csrf)
     db_session.commit()
 
-    # Register user
-    client.post("/auth/register", json={
-        "identifier": "user@example.com",
-        "password": "password123",
-        "display_name": "Test User"
-    })
+    # Register and verify user (login requires is_verified=True)
+    register_and_verify(client, "user@example.com", "password123", "Test User")
 
     # Try to login with expired token
     client.cookies.set("session_id", "test_session")
@@ -178,7 +194,7 @@ def test_register_success(client):
 def test_register_duplicate_email(client):
     """
     Test: Duplicate email is rejected.
-    Expected: First registration succeeds, second fails with 400.
+    Expected: First registration succeeds, second fails with 409 (conflict).
     """
     # Register first user
     response1 = client.post("/auth/register", json={
@@ -194,8 +210,8 @@ def test_register_duplicate_email(client):
         "password": "password456",
         "display_name": "Another John"
     })
-    assert response2.status_code == 400
-    assert "already registered" in response2.json()["detail"].lower()
+    assert response2.status_code == 409
+    assert "already exists" in response2.json()["detail"].lower()
 
 
 # ============================================================================
@@ -207,12 +223,8 @@ def test_login_success(client, db_session):
     Test: Login with valid credentials works.
     Expected: Tokens issued, cookies set, user data returned.
     """
-    # Register user
-    client.post("/auth/register", json={
-        "identifier": "user@example.com",
-        "password": "password123",
-        "display_name": "Test User"
-    })
+    # Register and verify user (login requires is_verified=True)
+    register_and_verify(client, "user@example.com", "password123", "Test User")
 
     # Get CSRF token
     response_csrf = client.get("/auth/csrf")
@@ -235,9 +247,10 @@ def test_login_success(client, db_session):
 def test_login_invalid_password(client):
     """
     Test: Login with wrong password fails.
-    Expected: Status 401, generic error message (no user enumeration).
+    Expected: Status 401, "wrong credentials" error (distinct from account-not-found).
     """
-    # Register user
+    # Register user (wrong-password check happens before is_verified check,
+    # so OTP verification isn't required for this test)
     client.post("/auth/register", json={
         "identifier": "user@example.com",
         "password": "password123",
@@ -255,7 +268,107 @@ def test_login_invalid_password(client):
     )
 
     assert response.status_code == 401
-    assert "Invalid credentials" in response.json()["detail"]
+    assert "wrong credentials" in response.json()["detail"].lower()
+
+
+def test_login_nonexistent_account(client):
+    """
+    Test: Login with an identifier that has no account fails.
+    Expected: Status 404, account-not-found message (distinct from wrong-password).
+    """
+    response_csrf = client.get("/auth/csrf")
+    csrf_token = response_csrf.json()["csrf_token"]
+
+    response = client.post("/auth/login",
+        json={"username": "nobody@example.com", "password": "password123"},
+        headers={"X-CSRF-Token": csrf_token}
+    )
+
+    assert response.status_code == 404
+    assert "account not found" in response.json()["detail"].lower()
+
+
+def test_login_unverified_account_rejected(client):
+    """
+    Test: Login before OTP verification is rejected.
+    Expected: Status 403, no auth cookies issued.
+    """
+    client.post("/auth/register", json={
+        "identifier": "user@example.com",
+        "password": "password123",
+        "display_name": "Test User"
+    })
+
+    response_csrf = client.get("/auth/csrf")
+    csrf_token = response_csrf.json()["csrf_token"]
+
+    response = client.post("/auth/login",
+        json={"username": "user@example.com", "password": "password123"},
+        headers={"X-CSRF-Token": csrf_token}
+    )
+
+    assert response.status_code == 403
+    assert "not verified" in response.json()["detail"].lower()
+    assert "access_token" not in response.cookies
+
+
+def test_verify_otp_wrong_code_rejected(client):
+    """
+    Test: Wrong OTP is rejected and does not verify the account.
+    """
+    response = client.post("/auth/register", json={
+        "identifier": "user@example.com",
+        "password": "password123",
+        "display_name": "Test User"
+    })
+    user_id = response.json()["user_id"]
+
+    otp_response = client.post("/auth/verify-otp", json={
+        "user_id": user_id,
+        "otp": "000000"
+    })
+
+    assert otp_response.status_code == 401
+    assert "access_token" not in otp_response.cookies
+
+
+def test_verify_otp_success(client, db_session):
+    """
+    Test: Correct OTP (123456) verifies the account and issues auth cookies.
+    """
+    response = client.post("/auth/register", json={
+        "identifier": "user@example.com",
+        "password": "password123",
+        "display_name": "Test User"
+    })
+    user_id = response.json()["user_id"]
+
+    otp_response = client.post("/auth/verify-otp", json={
+        "user_id": user_id,
+        "otp": "123456"
+    })
+
+    assert otp_response.status_code == 200
+    assert "access_token" in otp_response.cookies
+    assert "refresh_token" in otp_response.cookies
+
+    user = db_session.query(User).filter(User.id == user_id).first()
+    assert user.is_verified is True
+
+
+def test_verify_otp_already_verified_rejected(client):
+    """
+    Test: Verifying an already-verified account is rejected.
+    """
+    data = register_and_verify(client, "user@example.com", "password123", "Test User")
+
+    otp_response = client.post("/auth/verify-otp", json={
+        "user_id": data["user_id"],
+        "otp": "123456"
+    })
+
+    assert otp_response.status_code == 400
+    assert "already verified" in otp_response.json()["detail"].lower()
 
 
 def test_login_requires_csrf(client):
@@ -287,12 +400,8 @@ def test_refresh_token_works(client, db_session):
     Test: Refresh token exchanges for new access token.
     Expected: New access token issued, refresh token remains valid.
     """
-    # Register and login
-    client.post("/auth/register", json={
-        "identifier": "user@example.com",
-        "password": "password123",
-        "display_name": "Test User"
-    })
+    # Register, verify, and login
+    register_and_verify(client, "user@example.com", "password123", "Test User")
 
     response_csrf = client.get("/auth/csrf")
     csrf_token = response_csrf.json()["csrf_token"]
@@ -327,12 +436,8 @@ def test_logout_revokes_refresh(client, db_session):
     Test: Logout revokes refresh token and clears cookies.
     Expected: Refresh token deleted from DB, cookies cleared.
     """
-    # Register and login
-    client.post("/auth/register", json={
-        "identifier": "user@example.com",
-        "password": "password123",
-        "display_name": "Test User"
-    })
+    # Register, verify, and login
+    register_and_verify(client, "user@example.com", "password123", "Test User")
 
     response_csrf = client.get("/auth/csrf")
     csrf_token = response_csrf.json()["csrf_token"]
@@ -370,12 +475,8 @@ def test_cookies_have_security_flags(client):
     Test: Authentication cookies have required security flags.
     Expected: HttpOnly, SameSite=strict, Secure (env-dependent).
     """
-    # Register and login
-    client.post("/auth/register", json={
-        "identifier": "user@example.com",
-        "password": "password123",
-        "display_name": "Test User"
-    })
+    # Register, verify, and login
+    register_and_verify(client, "user@example.com", "password123", "Test User")
 
     response_csrf = client.get("/auth/csrf")
     csrf_token = response_csrf.json()["csrf_token"]

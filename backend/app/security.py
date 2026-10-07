@@ -58,7 +58,8 @@ def create_access_token(user_id: int) -> str:
     payload = {
         "sub": str(user_id),
         "type": "access",
-        "exp": datetime.utcnow() + timedelta(seconds=ACCESS_TOKEN_EXPIRE_SECONDS)
+        "exp": datetime.utcnow() + timedelta(seconds=ACCESS_TOKEN_EXPIRE_SECONDS),
+        "jti": secrets.token_hex(16),  # Ensures uniqueness even for same-second issuance
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -75,7 +76,8 @@ def create_refresh_token(user_id: int) -> str:
     payload = {
         "sub": str(user_id),
         "type": "refresh",
-        "exp": datetime.utcnow() + timedelta(seconds=REFRESH_TOKEN_EXPIRE_SECONDS)
+        "exp": datetime.utcnow() + timedelta(seconds=REFRESH_TOKEN_EXPIRE_SECONDS),
+        "jti": secrets.token_hex(16),  # Ensures uniqueness even for same-second issuance
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
