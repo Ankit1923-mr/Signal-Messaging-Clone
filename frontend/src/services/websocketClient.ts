@@ -212,12 +212,14 @@ export class WebSocketClient {
 
         case MessageType.CONNECTED:
           // Connection established, no pending messages
+          this.options.onMessage?.(message);
           break;
 
         case MessageType.RECONNECTED:
           // Connection re-established with pending messages
           const payload = message.payload as ReconnectedPayload;
           this.options.onReconnected?.(payload.pending_messages);
+          this.options.onMessage?.(message);
           break;
 
         case MessageType.MESSAGE_ACK:

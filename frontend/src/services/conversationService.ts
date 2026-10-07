@@ -52,4 +52,14 @@ export const conversationService = {
     });
     return toConversation(response.data);
   },
+
+  /**
+   * Fetch metadata for a conversation by id. Used when a MESSAGE_RECEIVED
+   * event references a conversation_id the recipient doesn't know about yet
+   * (they never called createDirectConversation themselves).
+   */
+  async getConversation(conversationId: number): Promise<Conversation> {
+    const response = await apiClient.get<ConversationApiResponse>(`/conversations/${conversationId}`);
+    return toConversation(response.data);
+  },
 };

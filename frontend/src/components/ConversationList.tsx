@@ -4,6 +4,7 @@ import { useMessageStore } from "@/store/messageStore";
 import { useAuthStore } from "@/store/authStore";
 import { Conversation } from "@/types/protocol";
 import { Avatar, GroupAvatar } from "@/components/Avatar";
+import { getConversationDisplayInfo } from "@/lib/conversationDisplay";
 
 interface ConversationListProps {
   activeConversationId?: number;
@@ -31,7 +32,7 @@ export function ConversationList({
   const conversations = useMessageStore((state) => state.conversations);
   const unreadCounts = useMessageStore((state) => state.unreadCounts);
   const messages = useMessageStore((state) => state.messages);
-  const isUserOnline = useMessageStore((state) => state.isUserOnline);
+  const onlineUsers = useMessageStore((state) => state.onlineUsers);
   const currentUser = useAuthStore((state) => state.user);
 
   // Filter by search query (matches conversation name or the other member's name)
@@ -39,13 +40,11 @@ export function ConversationList({
   const filteredConversations = !query
     ? conversations
     : conversations.filter((conversation) => {
-        const otherMember =
-          conversation.type === "direct"
-            ? conversation.members.find((m) => m.id !== currentUser?.id)
-            : undefined;
-        const name = (conversation.name || otherMember?.display_name || "").toLowerCase();
-        const username = (otherMember?.username || "").toLowerCase();
-        return name.includes(query) || username.includes(query);
+        const info = getConversationDisplayInfo(conversation, currentUser?.id);
+        return (
+          info.name.toLowerCase().includes(query) ||
+          (info.username || "").toLowerCase().includes(query)
+        );
       });
 
   // Sort conversations by latest activity
@@ -96,19 +95,16 @@ export function ConversationList({
         const conversationMessages = messages[conversation.id] || [];
         const lastMessage = conversationMessages[conversationMessages.length - 1];
 
-        // For a direct conversation, the avatar/name shown is the OTHER member
-        const otherMember =
-          conversation.type === "direct"
-            ? conversation.members.find((m) => m.id !== currentUser?.id)
-            : undefined;
+        const { name: displayName, otherMember } = getConversationDisplayInfo(
+          conversation,
+          currentUser?.id
+        );
 
+        // Online status is about the OTHER member(s), never the current user.
         const onlineMembers = conversation.members.filter(
-          (m) => m.id !== currentUser?.id && isUserOnline(m.id)
+          (m) => m.id !== currentUser?.id && onlineUsers.has(m.id)
         );
         const hasOnlineMembers = onlineMembers.length > 0;
-
-        const displayName =
-          conversation.name || otherMember?.display_name || "Unnamed Conversation";
 
         return (
           <button

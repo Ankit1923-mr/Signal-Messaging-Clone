@@ -108,6 +108,26 @@ async def websocket_endpoint(websocket: WebSocket):
         # Step 3: Register connection (multi-tab support)
         await manager.connect(user_id, websocket)
 
+        # Step 3b: Determine currently online users among this user's conversation peers
+        # Get all conversations this user is a member of
+        user_conversations = db.query(ConversationMembers).filter(
+            ConversationMembers.user_id == user_id
+        ).all()
+        conversation_ids = [uc.conversation_id for uc in user_conversations]
+
+        online_users = []
+        if conversation_ids:
+            # Get all members of these conversations
+            members = db.query(ConversationMembers).filter(
+                ConversationMembers.conversation_id.in_(conversation_ids),
+                ConversationMembers.user_id != user_id
+            ).all()
+            peer_ids = {m.user_id for m in members}
+            # Check which ones are in active connections
+            for peer_id in peer_ids:
+                if peer_id in manager.active_connections:
+                    online_users.append(peer_id)
+
         # Step 4: Fetch pending messages and send to client
         pending_messages = await MessagingService.get_pending_messages(user_id, db)
 
@@ -128,6 +148,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "type": MessageType.RECONNECTED,
                 "payload": {
                     "pending_messages": pending_list,
+                    "online_users": online_users,
                     "timestamp": datetime.utcnow().isoformat()
                 }
             })
@@ -137,6 +158,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "type": MessageType.CONNECTED,
                 "payload": {
                     "user_id": user_id,
+                    "online_users": online_users,
                     "timestamp": datetime.utcnow().isoformat()
                 }
             })
@@ -277,7 +299,20 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
         ).all()
         member_ids = [m.user_id for m in members]
 
-        # Broadcast message_received to all recipients (except sender)
+        # Send message_ack to sender (ALL tabs for multi-tab sync) FIRST
+        # This prevents a race condition where the sender receives a RECEIPT_UPDATE
+        # for a message ID they haven't learned about yet via MESSAGE_ACK.
+        await manager.broadcast_to_user(user_id, {
+            "type": MessageType.MESSAGE_ACK,
+            "payload": {
+                "message_id": message.id,
+                "client_id": client_id,
+                "created_at": message.created_at.isoformat(),
+                "status": "pending"
+            }
+        })
+
+        # Broadcast message_received to all recipients (except sender) AFTER
         for member_id in member_ids:
             if member_id != user_id:
                 await manager.broadcast_to_user(member_id, {
@@ -291,17 +326,6 @@ async def _handle_send_message(user_id: int, data: dict, manager: ConnectionMana
                         "status": "pending"
                     }
                 })
-
-        # Send message_ack to sender (ALL tabs for multi-tab sync)
-        await manager.broadcast_to_user(user_id, {
-            "type": MessageType.MESSAGE_ACK,
-            "payload": {
-                "message_id": message.id,
-                "client_id": client_id,
-                "created_at": message.created_at.isoformat(),
-                "status": "pending"
-            }
-        })
 
     except Exception as e:
         # Service raised exception (validation error, etc.)

@@ -1,19 +1,25 @@
 "use client";
 
 import { useMessageStore } from "@/store/messageStore";
+import { Conversation } from "@/types/protocol";
 
 interface TypingIndicatorProps {
   conversationId: number;
+  /** Needed to resolve the typing user_id to a display name — see below. */
+  conversation?: Conversation;
 }
 
 /**
  * Typing Indicator
  *
- * Shows which users are currently typing in the conversation.
- * Consumes user_typing events from WebSocket.
+ * Shows which users are currently typing in the conversation, by name —
+ * never the raw numeric user_id. Consumes user_typing events from
+ * WebSocket (which only carries {conversation_id, sender_id, typing}; no
+ * protocol change was needed — the display name is resolved from the
+ * conversation's already-loaded `members` list).
  * Auto-clears after 3 seconds of no updates (matches backend debounce).
  */
-export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
+export function TypingIndicator({ conversationId, conversation }: TypingIndicatorProps) {
   // Select the raw stored value directly rather than state.getTypingUsers(id),
   // which allocated a brand-new array on every call/render. useSyncExternalStore
   // (what Zustand's hook is built on) requires the selector to return a
@@ -27,9 +33,12 @@ export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
     return null;
   }
 
+  const typingMember = conversation?.members.find((m) => m.id === typing.user_id);
+  const name = typingMember?.display_name || typingMember?.username || "Someone";
+
   return (
     <div className="flex-shrink-0 text-xs text-gray-500 italic px-4 py-2">
-      {typing.user_id} is typing...
+      {name} is typing...
     </div>
   );
 }

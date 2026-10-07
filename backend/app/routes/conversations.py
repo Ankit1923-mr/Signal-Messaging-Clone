@@ -2,8 +2,14 @@
 Conversation and user-search endpoints.
 
 Minimal REST surface needed for the frontend's "+ New Conversation" flow:
-- GET  /users/search       Find a user to start a direct conversation with
-- POST /conversations/direct   Find-or-create a 1:1 conversation (idempotent)
+- GET  /users/search              Find a user to start a direct conversation with
+- POST /conversations/direct      Find-or-create a 1:1 conversation (idempotent)
+- GET  /conversations/{id}        Fetch conversation metadata (members etc.)
+                                   for a conversation the caller didn't
+                                   initiate -- needed so the RECIPIENT of a
+                                   brand-new conversation's first message can
+                                   learn who it's with (see useWebSocket.ts's
+                                   MESSAGE_RECEIVED handler).
 
 Authenticated via the same httpOnly access_token cookie used elsewhere
 (see app.dependencies.get_current_user_from_cookie) — no new auth
@@ -63,6 +69,33 @@ def search_users(
     return [UserResponse.model_validate(u) for u in users]
 
 
+@router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
+def get_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch a single conversation's metadata (type, name, members).
+
+    Used by the recipient of a brand-new conversation's first WebSocket
+    message: they never called POST /conversations/direct themselves, so
+    this is how their frontend learns who the conversation is with.
+    """
+    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_member = db.query(ConversationMembers).filter(
+        ConversationMembers.conversation_id == conversation_id,
+        ConversationMembers.user_id == current_user.id,
+    ).first()
+    if not is_member:
+        raise HTTPException(status_code=403, detail="Not a member of this conversation")
+
+    return _conversation_to_response(conversation, db)
+
+
 @router.post("/conversations/direct", response_model=ConversationResponse, status_code=201)
 def create_or_get_direct_conversation(
     data: CreateDirectConversationRequest,
@@ -88,10 +121,23 @@ def create_or_get_direct_conversation(
         Conversation.direct_pair_key == pair_key,
     ).first()
     if existing:
+        # Defensive repair: an older bug could leave a conversation row
+        # committed with no members if the request was interrupted between
+        # the two separate commits that used to exist here. If we ever find
+        # one, backfill the two membership rows now rather than returning a
+        # conversation with an empty members list forever.
+        if not existing.members:
+            db.add(ConversationMembers(conversation_id=existing.id, user_id=current_user.id))
+            db.add(ConversationMembers(conversation_id=existing.id, user_id=data.other_user_id))
+            db.commit()
+            db.refresh(existing)
         return _conversation_to_response(existing, db)
 
-    # Not found — create it. The UNIQUE(direct_pair_key) constraint is the
-    # authoritative safety net against a concurrent duplicate creation race.
+    # Not found — create the conversation AND its two membership rows in a
+    # single transaction (one commit), so a request interrupted partway
+    # through can never leave an orphaned, memberless conversation behind.
+    # The UNIQUE(direct_pair_key) constraint is the authoritative safety net
+    # against a concurrent duplicate creation race from the other side.
     conversation = Conversation(
         type="direct",
         name=None,
@@ -100,6 +146,9 @@ def create_or_get_direct_conversation(
     )
     db.add(conversation)
     try:
+        db.flush()  # assigns conversation.id without committing yet
+        db.add(ConversationMembers(conversation_id=conversation.id, user_id=current_user.id))
+        db.add(ConversationMembers(conversation_id=conversation.id, user_id=data.other_user_id))
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -108,13 +157,13 @@ def create_or_get_direct_conversation(
             Conversation.direct_pair_key == pair_key,
         ).first()
         if existing:
+            if not existing.members:
+                db.add(ConversationMembers(conversation_id=existing.id, user_id=current_user.id))
+                db.add(ConversationMembers(conversation_id=existing.id, user_id=data.other_user_id))
+                db.commit()
+                db.refresh(existing)
             return _conversation_to_response(existing, db)
         raise HTTPException(status_code=500, detail="Failed to create conversation")
 
     db.refresh(conversation)
-    db.add(ConversationMembers(conversation_id=conversation.id, user_id=current_user.id))
-    db.add(ConversationMembers(conversation_id=conversation.id, user_id=data.other_user_id))
-    db.commit()
-    db.refresh(conversation)
-
     return _conversation_to_response(conversation, db)

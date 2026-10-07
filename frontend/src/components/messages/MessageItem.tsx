@@ -29,7 +29,7 @@ export function MessageItem({ message, conversationId, sender }: MessageItemProp
       ref={readObserverRef}
       className={`flex items-end gap-2 ${isSent ? "justify-end" : "justify-start"}`}
     >
-      {/* Sender avatar — only shown on received messages, matching Signal's layout */}
+      {/* Incoming: sender's avatar on the left */}
       {!isSent && (
         <Avatar
           avatarUrl={sender?.avatar_url}
@@ -39,7 +39,7 @@ export function MessageItem({ message, conversationId, sender }: MessageItemProp
       )}
 
       <div
-        className={`max-w-xs px-4 py-2 rounded-lg ${
+        className={`max-w-[70%] px-4 py-2 rounded-lg ${
           isSent
             ? "bg-blue-600 text-white"
             : "bg-white text-gray-900 shadow-sm"
@@ -56,19 +56,23 @@ export function MessageItem({ message, conversationId, sender }: MessageItemProp
         >
           <span>{formatTime(message.created_at)}</span>
 
-          {/* Receipt status (for sent messages) */}
+          {/* Receipt status — outgoing messages only. Incoming messages never
+              show the current user's own receipt ticks. */}
           {isSent && (
             <ReceiptStatusBadge
               status={message.status}
               deliveredAt={message.delivered_at}
               readAt={message.read_at}
+              isOptimistic={isOptimistic}
             />
           )}
-
-          {/* Optimistic indicator */}
-          {isOptimistic && <span>●</span>}
         </div>
       </div>
+
+      {/* Outgoing: current user's own avatar on the right */}
+      {isSent && (
+        <Avatar avatarUrl={user?.avatar_url} seed={user?.username || "me"} size={28} />
+      )}
     </div>
   );
 }

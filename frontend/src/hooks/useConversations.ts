@@ -42,6 +42,11 @@ export function useConversations() {
       markConversationAsRead(conversationId);
       // Broadcast to other tabs
       getBroadcastService().broadcastConversationSelected(conversationId);
+
+      // Request notification permission
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
     },
     [markConversationAsRead]
   );

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useWebSocket } from "./useWebSocket";
 import { useMessageStore } from "@/store/messageStore";
 import { useAuthStore } from "@/store/authStore";
+import { ReceiptStatus } from "@/types/protocol";
 
 /**
  * useMessageReadObserver Hook
@@ -38,7 +39,6 @@ export function useMessageReadObserver(
       return;
     }
 
-    // Create intersection observer
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -47,6 +47,8 @@ export function useMessageReadObserver(
             observedRef.current.add(messageId);
             // Send read receipt
             sendReceipt(messageId, "read");
+            // Also update local Zustand state so unread badge clears permanently
+            useMessageStore.getState().updateReceipt(messageId, ReceiptStatus.READ);
             // Stop observing
             observer.disconnect();
           }

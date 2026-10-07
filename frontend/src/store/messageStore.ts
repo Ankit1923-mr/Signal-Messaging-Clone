@@ -45,6 +45,7 @@ interface MessageStoreState {
 
   // Online status
   onlineUsers: Set<number>; // user_id → online status
+  lastSeen: Record<number, string>; // user_id → ISO timestamp
 
   // Connection state
   isConnected: boolean;
@@ -79,8 +80,10 @@ interface MessageStoreActions {
 
   // Online status
   setUserOnline: (userId: number) => void;
-  setUserOffline: (userId: number) => void;
+  setUserOffline: (userId: number, timestamp?: string) => void;
+  setOnlineUsersSnapshot: (userIds: number[]) => void;
   isUserOnline: (userId: number) => boolean;
+  getLastSeen: (userId: number) => string | undefined;
 
   // Connection state
   setConnected: (connected: boolean) => void;
@@ -92,6 +95,16 @@ interface MessageStoreActions {
   addPendingMessages: (conversationId: number, messages: Message[]) => void;
 }
 
+const getInitialLastSeen = (): Record<number, string> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const data = localStorage.getItem("lastSeen");
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+};
+
 export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
   (set, get) => ({
     // Initial state
@@ -102,6 +115,7 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
     unreadCounts: {},
     typingUsers: {},
     onlineUsers: new Set(),
+    lastSeen: getInitialLastSeen(),
     isConnected: false,
     reconnecting: false,
     error: null,
@@ -147,8 +161,9 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
         const convMessages = messages[message.conversation_id] || [];
         const index = convMessages.findIndex((m) => m.client_id === clientId);
         if (index !== -1) {
-          convMessages[index] = updated;
-          messages[message.conversation_id] = [...convMessages];
+          messages[message.conversation_id] = convMessages.map((m, i) =>
+            i === index ? updated : m
+          );
         }
 
         return { pendingMessages: remaining, messages };
@@ -173,9 +188,9 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
           const convMessages = messages[convId];
           const msgIndex = convMessages.findIndex((m) => m.id === messageId);
           if (msgIndex !== -1) {
-            const updated = { ...convMessages[msgIndex], status };
-            convMessages[msgIndex] = updated;
-            messages[convId] = [...convMessages];
+            messages[convId] = convMessages.map((m, i) =>
+              i === msgIndex ? { ...m, status } : m
+            );
           }
         }
         return { messages };
@@ -195,14 +210,16 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
           const convMessages = messages[convId];
           const msgIndex = convMessages.findIndex((m) => m.id === messageId);
           if (msgIndex !== -1) {
-            const updated = {
-              ...convMessages[msgIndex],
-              status,
-              ...(deliveredAt && { delivered_at: deliveredAt }),
-              ...(readAt && { read_at: readAt }),
-            };
-            convMessages[msgIndex] = updated;
-            messages[convId] = [...convMessages];
+            messages[convId] = convMessages.map((m, i) =>
+              i === msgIndex
+                ? {
+                    ...m,
+                    status,
+                    ...(deliveredAt && { delivered_at: deliveredAt }),
+                    ...(readAt && { read_at: readAt }),
+                  }
+                : m
+            );
           }
         }
         return {
@@ -212,14 +229,28 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
       });
     },
 
-    // Add conversation
+    // Add or refresh a conversation's metadata (members/name/type).
+    //
+    // Root cause of the "Fresh Rahul" identity bug: this used to no-op
+    // ("if (existing) return state") whenever the conversation id was
+    // already cached, so a conversation object fetched once (e.g. before
+    // this dev session's demo users were finalized, or from an earlier
+    // SQLite id-reuse cycle) stayed frozen in memory forever -- no later
+    // GET /conversations/{id} or POST /conversations/direct response could
+    // ever correct it, even though the backend (source of truth) already
+    // had the right members. Upserting here means whichever path calls
+    // addConversation always reflects the latest fetched truth.
     addConversation: (conversation: Conversation) => {
       set((state) => {
-        const existing = state.conversations.find((c) => c.id === conversation.id);
-        if (existing) return state;
+        const index = state.conversations.findIndex((c) => c.id === conversation.id);
+        if (index !== -1) {
+          const conversations = [...state.conversations];
+          conversations[index] = conversation;
+          return { conversations };
+        }
         return {
           conversations: [...state.conversations, conversation],
-          messages: { ...state.messages, [conversation.id]: [] },
+          messages: { ...state.messages, [conversation.id]: state.messages[conversation.id] ?? [] },
         };
       });
     },
@@ -271,10 +302,25 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
     },
 
     // Set user offline
-    setUserOffline: (userId: number) => {
+    setUserOffline: (userId: number, timestamp?: string) => {
       set((state) => {
         const online = new Set(state.onlineUsers);
         online.delete(userId);
+        const lastSeen = { ...state.lastSeen };
+        if (timestamp) {
+          lastSeen[userId] = timestamp;
+          if (typeof window !== "undefined") {
+            localStorage.setItem("lastSeen", JSON.stringify(lastSeen));
+          }
+        }
+        return { onlineUsers: online, lastSeen };
+      });
+    },
+
+    setOnlineUsersSnapshot: (userIds: number[]) => {
+      set((state) => {
+        const online = new Set(state.onlineUsers);
+        userIds.forEach((id) => online.add(id));
         return { onlineUsers: online };
       });
     },
@@ -282,6 +328,10 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
     // Check if user is online
     isUserOnline: (userId: number) => {
       return get().onlineUsers.has(userId);
+    },
+
+    getLastSeen: (userId: number) => {
+      return get().lastSeen[userId];
     },
 
     // Connection state
@@ -306,14 +356,34 @@ export const useMessageStore = create<MessageStoreState & MessageStoreActions>(
       });
     },
 
-    // Add pending messages (from reconnect)
+    // Add pending messages (from reconnect).
+    //
+    // Deduplicates by message id against what's already in the conversation.
+    // Root cause this guards against: the backend's RECONNECTED payload
+    // re-sends EVERY message whose receipt is still "pending" on every new
+    // connection (see MessagingService.get_pending_messages — no time
+    // cutoff, by design, for offline recovery). If a message had already
+    // reached this client once before (e.g. live via MESSAGE_RECEIVED on an
+    // earlier connection, or an earlier reconnect) and, for whatever reason,
+    // its receipt never advanced past "pending", the next reconnect would
+    // hand back that exact same message again and this previously just
+    // appended it unconditionally -- producing two message objects with the
+    // same id (and both with client_id: "", since neither payload shape
+    // includes client_id for received messages), which is what caused the
+    // duplicate React key `${id}-${client_id}` (e.g. "3-").
     addPendingMessages: (conversationId: number, messages: Message[]) => {
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [conversationId]: [...(state.messages[conversationId] || []), ...messages],
-        },
-      }));
+      set((state) => {
+        const existing = state.messages[conversationId] || [];
+        const existingIds = new Set(existing.map((m) => m.id));
+        const newMessages = messages.filter((m) => !existingIds.has(m.id));
+        if (newMessages.length === 0) return state;
+        return {
+          messages: {
+            ...state.messages,
+            [conversationId]: [...existing, ...newMessages],
+          },
+        };
+      });
     },
   })
 );

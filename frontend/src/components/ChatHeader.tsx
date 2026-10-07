@@ -4,6 +4,7 @@ import { Conversation } from "@/types/protocol";
 import { useAuthStore } from "@/store/authStore";
 import { useMessageStore } from "@/store/messageStore";
 import { Avatar, GroupAvatar } from "@/components/Avatar";
+import { getConversationDisplayInfo } from "@/lib/conversationDisplay";
 
 interface ChatHeaderProps {
   conversation: Conversation;
@@ -12,25 +13,32 @@ interface ChatHeaderProps {
 /** Header shown above the message list: avatar, name, online/member status. */
 export function ChatHeader({ conversation }: ChatHeaderProps) {
   const currentUser = useAuthStore((state) => state.user);
-  const isUserOnline = useMessageStore((state) => state.isUserOnline);
+  const onlineUsers = useMessageStore((state) => state.onlineUsers);
 
-  const otherMember =
-    conversation.type === "direct"
-      ? conversation.members.find((m) => m.id !== currentUser?.id)
-      : undefined;
+  const lastSeenMap = useMessageStore((state) => state.lastSeen);
 
+  const { name: displayName, otherMember } = getConversationDisplayInfo(conversation, currentUser?.id);
+
+  // Online status is always about the OTHER member(s), never the current
+  // user's own connection (that's shown separately in the sidebar profile).
   const onlineMembers = conversation.members.filter(
-    (m) => m.id !== currentUser?.id && isUserOnline(m.id)
+    (m) => m.id !== currentUser?.id && onlineUsers.has(m.id)
   );
 
-  const displayName = conversation.name || otherMember?.display_name || "Unnamed Conversation";
-
-  const subtitle =
-    conversation.type === "group"
-      ? `${conversation.members.length} members`
-      : onlineMembers.length > 0
-      ? "Online"
-      : "Offline";
+  let subtitle = "Offline";
+  if (conversation.type === "group") {
+    subtitle = `${conversation.members.length} members`;
+  } else if (onlineMembers.length > 0) {
+    subtitle = "Online";
+  } else if (otherMember) {
+    const lastSeenStr = lastSeenMap[otherMember.id];
+    if (lastSeenStr) {
+      const date = new Date(lastSeenStr);
+      const isToday = new Date().toDateString() === date.toDateString();
+      const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      subtitle = isToday ? `Last seen today at ${timeStr}` : `Last seen ${date.toLocaleDateString()} at ${timeStr}`;
+    }
+  }
 
   return (
     <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white">

@@ -23,7 +23,7 @@ export default function ConversationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // WebSocket connects as soon as the user is authenticated (cookie-based auth).
-  const { isConnected, reconnecting } = useWebSocket();
+  const { isConnected, reconnecting } = useWebSocket(activeConversationId ?? undefined);
 
   // Load user on mount
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function ConversationsPage() {
           <>
             <ChatHeader conversation={activeConversation} />
             <MessageList conversationId={activeConversation.id} />
-            <TypingIndicator conversationId={activeConversation.id} />
+            <TypingIndicator conversationId={activeConversation.id} conversation={activeConversation} />
             <MessageInput conversationId={activeConversation.id} disabled={!isConnected} />
           </>
         ) : (

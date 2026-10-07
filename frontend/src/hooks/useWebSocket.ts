@@ -17,6 +17,8 @@ import {
   resetWebSocketClient,
 } from "@/services/websocketClient";
 import { useMessageStore } from "@/store/messageStore";
+import { useAuthStore } from "@/store/authStore";
+import { conversationService } from "@/services/conversationService";
 import {
   WebSocketMessage,
   MessageType,
@@ -28,7 +30,7 @@ import {
   ReceiptStatus,
 } from "@/types/protocol";
 
-export function useWebSocket() {
+export function useWebSocket(activeConversationId?: number) {
   // IMPORTANT: select individual actions/fields instead of the whole store.
   // Zustand's set() always returns a new top-level state object, even for
   // unrelated field changes. A plain `useMessageStore()` call (no selector)
@@ -51,12 +53,41 @@ export function useWebSocket() {
   const setTyping = useMessageStore((state) => state.setTyping);
   const setUserOnline = useMessageStore((state) => state.setUserOnline);
   const setUserOffline = useMessageStore((state) => state.setUserOffline);
+  const setOnlineUsersSnapshot = useMessageStore((state) => state.setOnlineUsersSnapshot);
+  const addConversation = useMessageStore((state) => state.addConversation);
   const isConnected = useMessageStore((state) => state.isConnected);
   const reconnecting = useMessageStore((state) => state.reconnecting);
   const error = useMessageStore((state) => state.error);
+  const conversations = useMessageStore((state) => state.conversations);
+  const currentUserId = useAuthStore((state) => state.user?.id);
 
   const clientRef = useRef<WebSocketClient | null>(null);
   const typingTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
+  const activeNotificationsRef = useRef<Map<number, Notification>>(new Map());
+
+  const activeConversationIdRef = useRef(activeConversationId);
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+    
+    // Clear notification if we switch to a conversation that has one
+    if (activeConversationId) {
+      const notif = activeNotificationsRef.current.get(activeConversationId);
+      if (notif) {
+        notif.close();
+        activeNotificationsRef.current.delete(activeConversationId);
+      }
+    }
+  }, [activeConversationId]);
+
+  // handleServerMessage is captured once by the connect effect below (which
+  // only runs on mount), so it can never see a fresh `conversations` value
+  // through its own dependency array without the whole connection effect
+  // re-running on every message. A ref lets it always read the LATEST
+  // conversations list without that staleness problem.
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   // Initialize WebSocket connection. Runs exactly once per mount: the
   // dependency array is empty because every value used inside is either a
@@ -98,6 +129,19 @@ export function useWebSocket() {
                   byConversation.set(pm.conversation_id, []);
                 }
                 byConversation.get(pm.conversation_id)!.push(msg);
+
+                // get_pending_messages() only ever returns messages where WE
+                // are the recipient and the receipt is still "pending" — the
+                // live MESSAGE_RECEIVED handler below sends this same
+                // "delivered" ack for messages that arrive while connected,
+                // but this reconnect-recovery path never did, so any message
+                // delivered through it stayed "pending" server-side forever.
+                // That's what let the sender's receipt badge get stuck, and
+                // also why the backend kept handing the same still-pending
+                // message back on every subsequent reconnect (see
+                // addPendingMessages' dedup for the duplicate-key symptom
+                // that caused).
+                clientRef.current?.sendReceipt(pm.message_id, "delivered");
               });
 
               // Add each conversation's messages separately
@@ -105,6 +149,8 @@ export function useWebSocket() {
                 addPendingMessages(convId, messages);
               });
             }
+            // Actually it is handled in handleServerMessage for RECONNECTED,
+            // but we can set connected state here safely.
             setConnected(true);
             setReconnecting(false);
           },
@@ -145,6 +191,22 @@ export function useWebSocket() {
   const handleServerMessage = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
+        case MessageType.CONNECTED: {
+          const payload = message.payload as any;
+          if (payload.online_users) {
+            setOnlineUsersSnapshot(payload.online_users);
+          }
+          break;
+        }
+
+        case MessageType.RECONNECTED: {
+          const payload = message.payload as any;
+          if (payload.online_users) {
+            setOnlineUsersSnapshot(payload.online_users);
+          }
+          break;
+        }
+
         case MessageType.MESSAGE_ACK: {
           const payload = message.payload as MessageAckPayload;
           confirmMessage(payload.client_id, payload.message_id);
@@ -164,9 +226,53 @@ export function useWebSocket() {
           };
           addMessage(msg);
 
+          // If this message is for a conversation we don't know about yet
+          // (the recipient never called createDirectConversation
+          // themselves — they're learning about it for the first time via
+          // this message), fetch its metadata so it shows up correctly in
+          // the sidebar/header instead of as "Unnamed Conversation".
+          const isKnownConversation = conversationsRef.current.some(
+            (c) => c.id === payload.conversation_id
+          );
+          if (!isKnownConversation) {
+            conversationService
+              .getConversation(payload.conversation_id)
+              .then((conversation) => addConversation(conversation))
+              .catch(() => {
+                // Non-fatal: the message still shows under its conversation_id,
+                // just without a resolved display name, until next reconnect.
+              });
+          }
+
           // Auto-send "delivered" receipt
           if (clientRef.current) {
             clientRef.current.sendReceipt(payload.message_id, "delivered");
+          }
+
+          // Browser Notification
+          if (
+            payload.sender_id !== currentUserId &&
+            payload.conversation_id !== activeConversationIdRef.current
+          ) {
+            if (
+              typeof window !== "undefined" &&
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              let senderName = "Unknown Sender";
+              const conv = conversationsRef.current.find(
+                (c) => c.id === payload.conversation_id
+              );
+              if (conv) {
+                const member = conv.members.find((m) => m.id === payload.sender_id);
+                if (member) senderName = member.display_name;
+              }
+              const notif = new Notification(senderName, {
+                body: payload.content,
+                tag: `conv-${payload.conversation_id}`,
+              });
+              activeNotificationsRef.current.set(payload.conversation_id, notif);
+            }
           }
           break;
         }
@@ -196,12 +302,22 @@ export function useWebSocket() {
 
         case MessageType.USER_OFFLINE: {
           const payload = message.payload as any;
-          setUserOffline(payload.user_id);
+          setUserOffline(payload.user_id, payload.timestamp);
           break;
         }
       }
     },
-    [confirmMessage, addMessage, updateReceiptTimestamps, setTyping, setUserOnline, setUserOffline]
+    [
+      confirmMessage,
+      addMessage,
+      updateReceiptTimestamps,
+      setTyping,
+      setUserOnline,
+      setUserOffline,
+      addConversation,
+      setOnlineUsersSnapshot,
+      currentUserId,
+    ]
   );
 
   // Send message
@@ -214,11 +330,15 @@ export function useWebSocket() {
 
       const clientId = uuidv4();
 
-      // Create optimistic message
+      // Create optimistic message. sender_id must be the real current user id
+      // from the start (confirmMessage only ever patches `id`, never
+      // sender_id) — a placeholder like 0 here would make every message the
+      // sender sends permanently compare unequal to their own id and render
+      // as an incoming (left-aligned) message forever.
       const optimistic: Message = {
         id: 0, // Placeholder, will be replaced on ACK
         conversation_id: conversationId,
-        sender_id: 0, // Will be filled from auth store
+        sender_id: currentUserId ?? 0,
         content,
         client_id: clientId,
         created_at: new Date().toISOString(),
@@ -234,7 +354,7 @@ export function useWebSocket() {
         setError(error);
       }
     },
-    [setError, addOptimisticMessage]
+    [setError, addOptimisticMessage, currentUserId]
   );
 
   // Send receipt (mark as read)
