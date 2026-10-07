@@ -19,6 +19,9 @@ Contact" flow:
                                    conversation, so messages survive a page
                                    refresh instead of only existing in the
                                    live-session Zustand store.
+- POST /conversations/group       Create a group conversation (creator becomes admin)
+- POST /conversations/{id}/members         Admin-only: add a member to a group
+- DELETE /conversations/{id}/members/{uid} Admin-only: remove a member from a group
 
 Authenticated via the same httpOnly access_token cookie used elsewhere
 (see app.dependencies.get_current_user_from_cookie) — no new auth
@@ -32,10 +35,12 @@ from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user_from_cookie
-from app.models import Conversation, ConversationMembers, Message, MessageReceipt, User
+from app.models import Conversation, ConversationMembers, Group, Message, MessageReceipt, User
 from app.schemas import (
+    AddGroupMemberRequest,
     ConversationResponse,
     CreateDirectConversationRequest,
+    CreateGroupConversationRequest,
     MessageHistoryResponse,
     UserResponse,
 )
@@ -53,11 +58,16 @@ def _pair_key(user_a: int, user_b: int) -> str:
 def _conversation_to_response(conversation: Conversation, db: Session) -> ConversationResponse:
     member_ids = [m.user_id for m in conversation.members]
     members = db.query(User).filter(User.id.in_(member_ids)).all()
+    admin_id = None
+    if conversation.type == "group":
+        group = db.query(Group).filter(Group.conversation_id == conversation.id).first()
+        admin_id = group.admin_id if group else None
     return ConversationResponse(
         id=conversation.id,
         type=conversation.type,
         name=conversation.name,
         members=[UserResponse.model_validate(m) for m in members],
+        admin_id=admin_id,
     )
 
 
@@ -263,5 +273,138 @@ def create_or_get_direct_conversation(
             return _conversation_to_response(existing, db)
         raise HTTPException(status_code=500, detail="Failed to create conversation")
 
+    db.refresh(conversation)
+    return _conversation_to_response(conversation, db)
+
+
+@router.post("/conversations/group", response_model=ConversationResponse, status_code=201)
+def create_group_conversation(
+    data: CreateGroupConversationRequest,
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new group conversation. The creator becomes the group's admin
+    and is always a member, regardless of whether they included their own
+    id in member_ids.
+
+    Validates every requested member id actually exists before creating
+    anything, then creates the Conversation, its Group admin row, and every
+    ConversationMembers row in a single transaction — a request interrupted
+    partway through can never leave an orphaned group or partial membership
+    behind. Duplicate ids in member_ids (including the creator's own id) are
+    de-duplicated before insertion so the UNIQUE(conversation_id, user_id)
+    constraint is never hit under normal use.
+    """
+    member_ids = set(data.member_ids)
+    member_ids.add(current_user.id)
+
+    if member_ids - {current_user.id}:
+        found_users = db.query(User).filter(User.id.in_(member_ids)).all()
+        found_ids = {u.id for u in found_users}
+        missing = member_ids - found_ids
+        if missing:
+            raise HTTPException(status_code=404, detail=f"User(s) not found: {sorted(missing)}")
+
+    conversation = Conversation(
+        type="group",
+        name=data.name,
+        created_by=current_user.id,
+        direct_pair_key=None,
+    )
+    db.add(conversation)
+    db.flush()  # assigns conversation.id without committing yet
+
+    db.add(Group(conversation_id=conversation.id, admin_id=current_user.id))
+    for member_id in member_ids:
+        db.add(ConversationMembers(conversation_id=conversation.id, user_id=member_id))
+
+    db.commit()
+    db.refresh(conversation)
+    return _conversation_to_response(conversation, db)
+
+
+def _get_group_and_admin_check(
+    conversation_id: int, current_user: User, db: Session
+) -> tuple[Conversation, Group]:
+    """
+    Shared validation for the admin member-management endpoints: the
+    conversation must exist and be a group, and the current user must be
+    its admin. Raises the appropriate HTTPException otherwise.
+    """
+    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conversation.type != "group":
+        raise HTTPException(status_code=400, detail="Not a group conversation")
+
+    group = db.query(Group).filter(Group.conversation_id == conversation_id).first()
+    if not group:
+        raise HTTPException(status_code=500, detail="Group metadata missing")
+
+    if group.admin_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the group admin can manage members")
+
+    return conversation, group
+
+
+@router.post("/conversations/{conversation_id}/members", response_model=ConversationResponse, status_code=201)
+def add_group_member(
+    conversation_id: int,
+    data: AddGroupMemberRequest,
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    """
+    Add a member to a group. Admin-only. Rejects a user that doesn't exist
+    or is already a member. Single commit: either the membership row is
+    added or nothing changes.
+    """
+    conversation, _group = _get_group_and_admin_check(conversation_id, current_user, db)
+
+    target_user = db.query(User).filter(User.id == data.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing_membership = db.query(ConversationMembers).filter(
+        ConversationMembers.conversation_id == conversation_id,
+        ConversationMembers.user_id == data.user_id,
+    ).first()
+    if existing_membership:
+        raise HTTPException(status_code=400, detail="User is already a member of this group")
+
+    db.add(ConversationMembers(conversation_id=conversation_id, user_id=data.user_id))
+    db.commit()
+    db.refresh(conversation)
+    return _conversation_to_response(conversation, db)
+
+
+@router.delete("/conversations/{conversation_id}/members/{user_id}", response_model=ConversationResponse)
+def remove_group_member(
+    conversation_id: int,
+    user_id: int,
+    current_user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    """
+    Remove a member from a group. Admin-only. The admin cannot remove
+    themselves via this endpoint (there is no reassignment-of-admin flow,
+    so that would leave the group without an admin). Rejects removing a
+    user who isn't currently a member.
+    """
+    conversation, group = _get_group_and_admin_check(conversation_id, current_user, db)
+
+    if user_id == group.admin_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the group admin")
+
+    membership = db.query(ConversationMembers).filter(
+        ConversationMembers.conversation_id == conversation_id,
+        ConversationMembers.user_id == user_id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="User is not a member of this group")
+
+    db.delete(membership)
+    db.commit()
     db.refresh(conversation)
     return _conversation_to_response(conversation, db)

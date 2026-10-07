@@ -191,6 +191,8 @@ export interface Conversation {
   members: User[];
   last_message?: Message;
   unread_count: number;
+  /** Set for groups only (the admin's user id); undefined for direct conversations. */
+  admin_id?: number;
 }
 
 export interface AuthState {

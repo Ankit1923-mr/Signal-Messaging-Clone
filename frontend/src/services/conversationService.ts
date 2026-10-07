@@ -7,6 +7,9 @@
  * - POST /conversations/direct
  * - GET  /conversations/{id}
  * - GET  /conversations/{id}/messages          persisted message history
+ * - POST /conversations/group                  create a group conversation
+ * - POST /conversations/{id}/members            admin-only: add a group member
+ * - DELETE /conversations/{id}/members/{uid}    admin-only: remove a group member
  *
  * Cookie-based auth (same httpOnly access_token cookie as everything else).
  */
@@ -26,6 +29,7 @@ interface ConversationApiResponse {
   type: "direct" | "group";
   name: string | null;
   members: User[];
+  admin_id: number | null;
 }
 
 interface MessageHistoryApiResponse {
@@ -45,6 +49,7 @@ function toConversation(data: ConversationApiResponse): Conversation {
     name: data.name ?? undefined,
     members: data.members,
     unread_count: 0,
+    admin_id: data.admin_id ?? undefined,
   };
 }
 
@@ -104,5 +109,31 @@ export const conversationService = {
       `/conversations/${conversationId}/messages`
     );
     return response.data.map(toMessage);
+  },
+
+  /** Create a new group conversation. The caller becomes the group's admin. */
+  async createGroupConversation(name: string, memberIds: number[]): Promise<Conversation> {
+    const response = await apiClient.post<ConversationApiResponse>("/conversations/group", {
+      name,
+      member_ids: memberIds,
+    });
+    return toConversation(response.data);
+  },
+
+  /** Admin-only: add a member to a group. Returns the updated conversation. */
+  async addGroupMember(conversationId: number, userId: number): Promise<Conversation> {
+    const response = await apiClient.post<ConversationApiResponse>(
+      `/conversations/${conversationId}/members`,
+      { user_id: userId }
+    );
+    return toConversation(response.data);
+  },
+
+  /** Admin-only: remove a member from a group. Returns the updated conversation. */
+  async removeGroupMember(conversationId: number, userId: number): Promise<Conversation> {
+    const response = await apiClient.delete<ConversationApiResponse>(
+      `/conversations/${conversationId}/members/${userId}`
+    );
+    return toConversation(response.data);
   },
 };

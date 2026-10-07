@@ -9,11 +9,12 @@ import { ConversationList } from "@/components/ConversationList";
 import { ChatHeader } from "@/components/ChatHeader";
 import { Avatar } from "@/components/Avatar";
 import { AddContactPanel } from "@/components/AddContactPanel";
+import { CreateGroupPanel } from "@/components/CreateGroupPanel";
 import { MessageList } from "@/components/messages/MessageList";
 import { MessageInput } from "@/components/messages/MessageInput";
 import { TypingIndicator } from "@/components/messages/TypingIndicator";
 
-type SidebarView = "conversations" | "add-contact";
+type SidebarView = "conversations" | "add-contact" | "create-group";
 
 export default function ConversationsPage() {
   const router = useRouter();
@@ -73,6 +74,11 @@ export default function ConversationsPage() {
             onBack={() => setSidebarView("conversations")}
             onConversationCreated={(conversationId) => selectConversation(conversationId)}
           />
+        ) : sidebarView === "create-group" ? (
+          <CreateGroupPanel
+            onBack={() => setSidebarView("conversations")}
+            onConversationCreated={(conversationId) => selectConversation(conversationId)}
+          />
         ) : (
           <>
             {/* Current user profile header */}
@@ -115,13 +121,19 @@ export default function ConversationsPage() {
               searchQuery={searchQuery}
             />
 
-            {/* Add Contact action */}
-            <div className="p-3 border-t border-gray-200 flex-shrink-0">
+            {/* Add Contact / Create Group actions */}
+            <div className="p-3 border-t border-gray-200 flex-shrink-0 flex gap-2">
               <button
                 onClick={() => setSidebarView("add-contact")}
-                className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
+                className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
               >
                 + Add Contact
+              </button>
+              <button
+                onClick={() => setSidebarView("create-group")}
+                className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors"
+              >
+                + New Group
               </button>
             </div>
           </>

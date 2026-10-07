@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { Conversation } from "@/types/protocol";
 import { useAuthStore } from "@/store/authStore";
 import { useMessageStore } from "@/store/messageStore";
 import { Avatar, GroupAvatar } from "@/components/Avatar";
 import { getConversationDisplayInfo } from "@/lib/conversationDisplay";
+import { GroupMembersModal } from "@/components/GroupMembersModal";
 
 interface ChatHeaderProps {
   conversation: Conversation;
@@ -14,6 +16,7 @@ interface ChatHeaderProps {
 export function ChatHeader({ conversation }: ChatHeaderProps) {
   const currentUser = useAuthStore((state) => state.user);
   const onlineUsers = useMessageStore((state) => state.onlineUsers);
+  const [showMembers, setShowMembers] = useState(false);
 
   const lastSeenMap = useMessageStore((state) => state.lastSeen);
 
@@ -42,7 +45,11 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
 
   return (
     <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white">
-      <div className="flex items-center gap-3">
+      <button
+        onClick={() => conversation.type === "group" && setShowMembers(true)}
+        disabled={conversation.type !== "group"}
+        className="flex items-center gap-3 text-left disabled:cursor-default"
+      >
         {conversation.type === "group" ? (
           <GroupAvatar size={40} />
         ) : (
@@ -57,7 +64,15 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           <h2 className="font-semibold text-sm text-gray-900">{displayName}</h2>
           <p className="text-xs text-gray-500">{subtitle}</p>
         </div>
-      </div>
+      </button>
+
+      {showMembers && currentUser && (
+        <GroupMembersModal
+          conversation={conversation}
+          currentUserId={currentUser.id}
+          onClose={() => setShowMembers(false)}
+        />
+      )}
 
       {/* Placeholder controls — not wired to real features yet */}
       <div className="flex items-center gap-1 text-gray-400">

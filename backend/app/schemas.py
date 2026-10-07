@@ -89,6 +89,26 @@ class ConversationResponse(BaseModel):
     type: str  # "direct" or "group"
     name: str | None = None
     members: list[UserResponse]
+    admin_id: int | None = None  # set for groups only; None for direct conversations
+
+
+class CreateGroupConversationRequest(BaseModel):
+    """Request to create a new group conversation."""
+    name: str = Field(..., min_length=1, max_length=255, description="Group name")
+    member_ids: list[int] = Field(default_factory=list, description="Other members (creator is added automatically)")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Group name cannot be empty")
+        return stripped
+
+
+class AddGroupMemberRequest(BaseModel):
+    """Request to add a member to an existing group (admin only)."""
+    user_id: int
 
 
 class MessageHistoryResponse(BaseModel):

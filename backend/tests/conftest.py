@@ -36,7 +36,22 @@ def cleanup_after_test(db_session):
     """Clean up database tables after each test."""
     yield
     # Clean up specific tables used in this test
-    from app.models import CSRFBootstrap, RefreshToken, User, Session
+    from app.models import (
+        CSRFBootstrap,
+        Conversation,
+        ConversationMembers,
+        Group,
+        Message,
+        MessageReceipt,
+        RefreshToken,
+        User,
+        Session,
+    )
+    db_session.query(MessageReceipt).delete()
+    db_session.query(Message).delete()
+    db_session.query(Group).delete()
+    db_session.query(ConversationMembers).delete()
+    db_session.query(Conversation).delete()
     db_session.query(RefreshToken).delete()
     db_session.query(CSRFBootstrap).delete()
     db_session.query(User).delete()
