@@ -18,9 +18,6 @@ import { Conversation } from "@/types/protocol";
  * Separates conversation state from message state for cleaner updates.
  */
 export function useConversations() {
-  // TEMPORARY DEBUG: remove once the freeze/no-response bugfix is confirmed.
-  console.count("useConversations render");
-
   const [activeConversationId, setActiveConversationId] = useState<
     number | null
   >(null);

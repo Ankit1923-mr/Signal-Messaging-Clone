@@ -65,11 +65,7 @@ export function useWebSocket() {
   // (plus its own guard against duplicate connects) is what actually keeps
   // "one connection per tab" even across multiple components calling this
   // hook (e.g. every MessageItem's read-observer also uses useWebSocket()).
-  // TEMPORARY DEBUG: remove once the freeze/no-response bugfix is confirmed.
-  console.count("useWebSocket render");
-
   useEffect(() => {
-    console.log("WS connect effect running (should log once per mount, not repeatedly)");
     const initializeConnection = async () => {
       try {
         setError(null);
@@ -77,7 +73,6 @@ export function useWebSocket() {
 
         const client = getWebSocketClient({
           onConnected: () => {
-            console.log("WS connect");
             setConnected(true);
             setReconnecting(false);
           },
@@ -123,7 +118,6 @@ export function useWebSocket() {
           },
 
           onClose: () => {
-            console.log("WS disconnect");
             setConnected(false);
           },
         });

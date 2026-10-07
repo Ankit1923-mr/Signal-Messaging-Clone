@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useMessageStore } from "@/store/messageStore";
+import { useMessageStore, EMPTY_MESSAGES } from "@/store/messageStore";
 import { useAuthStore } from "@/store/authStore";
 import { MessageItem } from "./MessageItem";
 
@@ -10,9 +10,11 @@ interface MessageListProps {
 }
 
 export function MessageList({ conversationId }: MessageListProps) {
-  const messages = useMessageStore((state) =>
-    state.getMessages(conversationId)
-  );
+  // Select the raw stored array directly (with a stable empty-array
+  // fallback) rather than state.getMessages(id), which allocated a new []
+  // on every call whenever the conversation had no messages yet -- see
+  // EMPTY_MESSAGES in messageStore.ts for why that broke snapshot stability.
+  const messages = useMessageStore((state) => state.messages[conversationId] ?? EMPTY_MESSAGES);
   const conversation = useMessageStore((state) =>
     state.conversations.find((c) => c.id === conversationId)
   );

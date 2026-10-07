@@ -14,17 +14,22 @@ interface TypingIndicatorProps {
  * Auto-clears after 3 seconds of no updates (matches backend debounce).
  */
 export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
-  const typingUsers = useMessageStore((state) => state.getTypingUsers(conversationId));
+  // Select the raw stored value directly rather than state.getTypingUsers(id),
+  // which allocated a brand-new array on every call/render. useSyncExternalStore
+  // (what Zustand's hook is built on) requires the selector to return a
+  // referentially stable snapshot when nothing changed — an always-new array
+  // reference caused "getSnapshot should be cached" / an infinite render loop.
+  // typingUsers[conversationId] itself only changes reference when set()
+  // actually updates it, so this is stable across unrelated re-renders.
+  const typing = useMessageStore((state) => state.typingUsers[conversationId]);
 
-  if (typingUsers.length === 0) {
+  if (!typing) {
     return null;
   }
 
   return (
     <div className="flex-shrink-0 text-xs text-gray-500 italic px-4 py-2">
-      {typingUsers.length === 1
-        ? `${typingUsers[0].user_id} is typing...`
-        : `${typingUsers.length} people are typing...`}
+      {typing.user_id} is typing...
     </div>
   );
 }

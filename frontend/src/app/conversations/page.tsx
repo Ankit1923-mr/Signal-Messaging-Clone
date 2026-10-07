@@ -16,9 +16,6 @@ import { TypingIndicator } from "@/components/messages/TypingIndicator";
 type SidebarView = "conversations" | "new-message";
 
 export default function ConversationsPage() {
-  // TEMPORARY DEBUG: remove once the freeze/no-response bugfix is confirmed.
-  console.count("ConversationsPage render");
-
   const router = useRouter();
   const { user, isAuthenticated, isLoading, loadUser, logout } = useAuthStore();
   const { activeConversationId, conversations, selectConversation } = useConversations();
@@ -30,7 +27,6 @@ export default function ConversationsPage() {
 
   // Load user on mount
   useEffect(() => {
-    console.log("loadUser called");
     loadUser();
   }, [loadUser]);
 
@@ -54,7 +50,6 @@ export default function ConversationsPage() {
   }
 
   const handleLogout = async () => {
-    console.log("LOGOUT CLICKED"); // TEMPORARY DEBUG
     // logout() always clears local auth state, even if the backend call
     // fails, so navigation here is unconditional.
     await logout();
@@ -117,10 +112,7 @@ export default function ConversationsPage() {
             {/* New message action */}
             <div className="p-3 border-t border-gray-200 flex-shrink-0">
               <button
-                onClick={() => {
-                  console.log("NEW CONVERSATION CLICKED"); // TEMPORARY DEBUG
-                  setSidebarView("new-message");
-                }}
+                onClick={() => setSidebarView("new-message")}
                 className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
               >
                 + New message

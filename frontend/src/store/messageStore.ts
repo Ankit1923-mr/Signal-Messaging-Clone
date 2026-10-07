@@ -18,7 +18,13 @@ import {
   ReceiptUpdatePayload,
 } from "@/types/protocol";
 
-interface TypingUser {
+// Stable empty-array reference for selectors that need to return "no items
+// yet" without allocating a new array on every call (a fresh [] literal on
+// each selector invocation breaks useSyncExternalStore's snapshot-stability
+// requirement and causes an infinite render loop).
+export const EMPTY_MESSAGES: Message[] = [];
+
+export interface TypingUser {
   user_id: number;
   typing: boolean;
   timestamp: number;

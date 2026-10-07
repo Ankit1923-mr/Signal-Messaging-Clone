@@ -24,7 +24,6 @@ class BroadcastChannelService {
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
       try {
         this.channel = new BroadcastChannel("signal-messaging");
-        console.log("BroadcastChannel created"); // TEMPORARY DEBUG
         this.channel.onmessage = (event) => {
           this.handleMessage(event.data);
         };
@@ -76,7 +75,6 @@ class BroadcastChannelService {
     if (this.channel) {
       this.channel.close();
       this.channel = null;
-      console.log("BroadcastChannel closed"); // TEMPORARY DEBUG
     }
     this.handlers.clear();
   }
